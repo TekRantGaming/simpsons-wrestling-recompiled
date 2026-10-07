@@ -39,6 +39,7 @@ mod_function_entry_funcs = [
   "0x80044628",  # PlayMovie(index, flag): Skip Intro returns at once for the logos
   "0x80044F74",  # frame step getter: Skip Intro ends the copyright card's 5 s loop
   "0x8005E0CC",  # DrawOTag: widescreen HUD packets are tagged with their screen edge
+  "0x800471E0",  # wait-for-flip spin: fast-forwarded to the VBlank that clears it
 ]
 
 [runtime]

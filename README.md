@@ -76,7 +76,7 @@ switches.
   frame (`0x80044F80`) and moves everything by a step from a linear table
   (`0x8006ECFC`, 68 per VBlank). A match runs at 20-30 FPS only because a frame
   costs more than one VBlank of R3000A time. During matches the plugin
-  overclocks the emulated CPU up to 300% (`psx_mod_set_cpu_overclock`, added
+  overclocks the emulated CPU up to 400% (`psx_mod_set_cpu_overclock`, added
   to the framework for this port), so every frame takes one VBlank: the
   game's own timestep stays 1 and its speed is unchanged. Boot, menus and
   loading keep stock CPU timing.
@@ -84,7 +84,16 @@ switches.
   renderer time. Every quarter second the plugin compares game time with real
   time; if the game falls behind it lowers the overclock (the frame rate drops
   toward the original 20-30), and it raises it again when there is headroom.
-  `SIMPSONS_GOVERNOR_LOG=<file>` logs the level, game FPS and speed every 2 s.
+  It ignores the first second of a match and any single slow quarter second
+  (the arena loading, a host hiccup), so a hitch does not cost seconds of
+  lower FPS. `SIMPSONS_GOVERNOR_LOG=<file>` logs the level, game FPS and speed
+  every 2 s.
+- **Fast wait for the frame flip.** After drawing a frame the game spins in
+  `0x800471E0` until the VBlank handler flips the display. Overclocked, most
+  of each frame went on emulating that loop. A function filter instead moves
+  guest time straight to each next device event and runs the loop's own
+  interrupt check until the flag clears, so the extra CPU speed costs the PC
+  almost nothing when the game has finished its frame early.
 - **Skip intro.** Entry hooks (`game.toml` `mod_function_entry_funcs`) end the
   copyright card's 5-second loop in the boot routine (`0x8001D0F8`) and return
   straight from PlayMovie (`0x80044628`) for the two logo movies. The memory
@@ -96,9 +105,12 @@ switches.
 
 ## Tested
 
-On the developer's Windows PC (release build, 4K render, smooth outlines,
-stable geometry, widescreen), attract-demo matches ran at 1.00x speed and
-57-60 game FPS with the governor (stock: 20-26 FPS). Player walking speed
+On the developer's Windows PC (Ryzen 7 7800X3D, RTX 4070 Ti, 4K 120 Hz panel;
+release build, 4K render, smooth outlines, stable geometry, widescreen, VSync
+on), attract-demo matches in two arenas ran at 1.00x speed and a steady 60
+game FPS at the 400% overclock (stock: 20-26 FPS). Emulating a match took
+about 0.4 s of CPU per second of play, against 0.5 s before the PGO/LTO build
+and the fast flip wait (fixed 300% overclock, VSync off). Player walking speed
 measured 68 units per VBlank at both 20-30 FPS and 60 FPS, the same as the
 game's own step table. Linux was checked under WSL2: the launcher starts the
 game, it reaches the title and plays the attract-demo match in 16:9. WSL's
@@ -128,6 +140,13 @@ build.bat
 build-launcher.bat
 powershell -File packaging\package_windows.ps1
 ```
+
+`build.bat` compiles with ThinLTO and profile-guided optimisation from
+`pgo/windows.profdata` (about 25% less CPU per frame than a plain release
+build). After large changes to the game C or the runtime, retrain that profile
+with `build-pgo.bat "path\to\Simpsons Wrestling, The (USA).cue"`: it builds an
+instrumented game, plays the attract demo for four minutes and rewrites the
+profile.
 
 **Linux** (cmake, ninja, gcc, and the X11, Wayland, GL, ALSA, PulseAudio and
 udev development packages; on Ubuntu: `libx11-dev libxext-dev libgl-dev
