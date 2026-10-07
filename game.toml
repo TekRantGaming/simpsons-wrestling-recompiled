@@ -40,6 +40,7 @@ mod_function_entry_funcs = [
   "0x80044F74",  # frame step getter: Skip Intro ends the copyright card's 5 s loop
   "0x8005E0CC",  # DrawOTag: widescreen HUD packets are tagged with their screen edge
   "0x800471E0",  # wait-for-flip spin: fast-forwarded to the VBlank that clears it
+  "0x8005457C",  # task update: 120 FPS render passes run here, before frame N+1
 ]
 # Fighter position update (0x8002E09C..): pos += (v + vB) * 3/4 once per game
 # frame with no frame step. At 60 FPS the velocity is scaled by the step first.

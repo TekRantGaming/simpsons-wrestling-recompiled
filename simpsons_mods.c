@@ -6,7 +6,8 @@
  * launcher is the only place a player turns them on or off:
  *
  *   widescreen = on        16:9 presentation (GTE projection widened)
- *   frame_rate = 60        60 = real 60 FPS (faster emulated CPU), 30 = original
+ *   frame_rate = 60        60 = real 60 FPS (faster emulated CPU), 30 = original,
+ *                          120 = 60 FPS game frames plus an in-between frame each
  *   skip_intro = on        EA / Big Ape logos and the intro movie are skipped
  *   unlock_all = on        all wrestlers, both circuits and Bonus Match Up
  *
@@ -174,6 +175,14 @@ static double   s_raise_after = 0.0;  /* wall time before the next step up */
 static double   s_raise_backoff = 2.0;/* seconds; doubles after each failed raise */
 static int      s_raised_last = 0;
 static uint32_t s_slow_windows = 0;   /* slow windows in a row */
+/* 120 FPS render passes (see "120 FPS" below). They spend host time inside
+ * the game's frame, so when the game falls behind while they run, the
+ * governor pauses them (with a growing wait) instead of lowering the
+ * overclock: the 60 FPS game always comes first. */
+static uint32_t s_pass_rate = 0;      /* frame_rate >= 120: presentation rate */
+static uint32_t s_window_passes = 0;  /* in-between frames in this window */
+static double   s_pass_resume_at = 0.0;
+static double   s_pass_backoff = 4.0; /* seconds; doubles after each pause */
 static uint32_t s_match_vblanks = 0;  /* VBlanks since the match scene began */
 
 static double now_seconds(void) {
@@ -197,10 +206,21 @@ static void simpsons_govern(void) {
     const double speed = (kGovernorWindow / 59.94) / (t - s_window_start);
     s_window_vblanks = 0;
     const int healthy = speed >= kGovernorHealthy;
+    const uint32_t passes = s_window_passes;
+    s_window_passes = 0;
+    if (speed < kGovernorSlow && passes) {
+        /* Behind while in-between frames ran: pause those at once (they are
+         * optional, unlike the game's own frames). */
+        s_slow_windows = 0;
+        s_pass_resume_at = t + s_pass_backoff;
+        if (s_pass_backoff < 64.0) s_pass_backoff *= 2.0;
+        return;
+    }
     if (speed >= kGovernorSlow)
         s_slow_windows = 0;
     else if (++s_slow_windows < 2u && !s_raised_last)
         return;    /* one slow window: wait for the next before acting */
+    if (healthy && passes && s_pass_backoff > 4.0) s_pass_backoff *= 0.9;
     if (speed < kGovernorSlow) {
         /* Behind real time: back off, further when far behind, and wait
          * longer before trying again if a raise just caused this. */
@@ -231,6 +251,30 @@ static int      s_gov_log_init = 0;
 static double   s_log_t0 = 0.0;
 static uint32_t s_log_frames0 = 0, s_log_vblanks = 0;
 
+/* 120 FPS render passes in the current log window (filled by the pass hook). */
+static uint32_t s_log_pass_frames = 0, s_log_pass_images = 0;
+static double   s_log_pass_seconds = 0.0;
+static double   s_log_pass_task_seconds = 0.0, s_log_pass_draw_seconds = 0.0;
+/* The real frame's task update, timed from its entry to the flip wait. */
+static double   s_real_task_start = 0.0, s_log_real_task_seconds = 0.0;
+static uint32_t s_log_real_tasks = 0;
+
+/* SIMPSONS_PASS_TASK_TIMING (testing): host time per task handler in passes. */
+static uint32_t s_task_addr[32], s_task_calls[32], s_task_count = 0;
+static double   s_task_seconds[32];
+
+static void simpsons_task_time(uint32_t handler, double seconds) {
+    uint32_t i = 0;
+    while (i < s_task_count && s_task_addr[i] != handler) i++;
+    if (i == s_task_count) {
+        if (s_task_count == 32) return;
+        s_task_addr[s_task_count] = handler; s_task_calls[i] = 0; s_task_seconds[i] = 0.0;
+        s_task_count++;
+    }
+    s_task_calls[i]++;
+    s_task_seconds[i] += seconds;
+}
+
 static void simpsons_governor_log(void) {
     if (!s_gov_log_init) {
         s_gov_log_init = 1;
@@ -243,10 +287,29 @@ static void simpsons_governor_log(void) {
     ++s_log_vblanks;
     if (s_log_t0 == 0.0) { s_log_t0 = t; s_log_frames0 = frames; s_log_vblanks = 0; return; }
     if (t - s_log_t0 < 2.0) return;
-    fprintf(s_gov_log, "match=%d level=%u game_fps=%.1f speed=%.3f\n", simpsons_match_scene(), s_overclock_now,
-            (double)(frames - s_log_frames0) / (t - s_log_t0), (double)s_log_vblanks / 59.94 / (t - s_log_t0));
+    fprintf(s_gov_log, "match=%d level=%u game_fps=%.1f speed=%.3f pass_frames=%u pass_images=%u pass_ms=%.2f"
+            " pass_task_ms=%.2f pass_draw_ms=%.2f real_task_ms=%.2f\n",
+            simpsons_match_scene(), s_overclock_now,
+            (double)(frames - s_log_frames0) / (t - s_log_t0), (double)s_log_vblanks / 59.94 / (t - s_log_t0),
+            s_log_pass_frames, s_log_pass_images,
+            s_log_pass_images ? 1000.0 * s_log_pass_seconds / s_log_pass_images : 0.0,
+            s_log_pass_images ? 1000.0 * s_log_pass_task_seconds / s_log_pass_images : 0.0,
+            s_log_pass_images ? 1000.0 * s_log_pass_draw_seconds / s_log_pass_images : 0.0,
+            s_log_real_tasks ? 1000.0 * s_log_real_task_seconds / s_log_real_tasks : 0.0);
+    s_log_real_task_seconds = 0.0; s_log_real_tasks = 0;
     fflush(s_gov_log);
     s_log_t0 = t; s_log_frames0 = frames; s_log_vblanks = 0;
+    s_log_pass_frames = s_log_pass_images = 0; s_log_pass_seconds = 0.0;
+    s_log_pass_task_seconds = s_log_pass_draw_seconds = 0.0;
+    if (s_task_count) {
+        fprintf(s_gov_log, "  tasks(ms/call):");
+        for (uint32_t i = 0; i < s_task_count; i++)
+            if (s_task_calls[i])
+                fprintf(s_gov_log, " %08X=%.3f", s_task_addr[i], 1000.0 * s_task_seconds[i] / s_task_calls[i]);
+        fprintf(s_gov_log, "\n");
+        fflush(s_gov_log);
+        s_task_count = 0;
+    }
 }
 
 static void simpsons_frame_rate_vblank(void) {
@@ -260,6 +323,7 @@ static void simpsons_frame_rate_vblank(void) {
         s_window_vblanks = 0;
         s_slow_windows = 0;
         s_match_vblanks = 0;
+        s_window_passes = 0;
     }
     if (want != s_overclock_now && psx_mod_set_cpu_overclock(want)) s_overclock_now = want;
 }
@@ -411,6 +475,11 @@ extern void psx_check_interrupts_at(struct CPUState* cpu, uint32_t resume_pc);
 
 static int simpsons_wait_flip_filter(struct CPUState* cpu, uint32_t address) {
     (void)address;
+    if (s_real_task_start > 0.0) {
+        s_log_real_task_seconds += now_seconds() - s_real_task_start;
+        s_log_real_tasks++;
+        s_real_task_start = 0.0;
+    }
     const uint32_t sr = cpu->cop0[12];
     if (!(sr & 1u) || !(sr & 0x400u)) return 0;          /* IEc / IM2 off */
     uint32_t waited = 0;
@@ -475,6 +544,108 @@ static void simpsons_scale_move(struct CPUState* cpu, uint32_t address) {
     cpu->gpr[reg] = (uint32_t)(int32_t)(v * step / s_move_ref_step);
 }
 
+/* 120 FPS: in-between frames the game draws itself (psxrecomp render passes,
+ * docs/RENDER_PASSES.md). Game logic stays at 60 FPS. The main loop
+ * (0x80044F1C) runs every task through 0x8005457C(0, 14, step); the tasks
+ * move and draw at once, filling the ordering table at gp+0x13C8. At the end
+ * of a frame 0x80047158 makes that buffer current (gp+0x13CC), DrawOTags it
+ * with the draw environment of the other buffer (gp+0x13D4) and arms the
+ * flip, which the VBlank callback (0x80047054) performs with
+ * PutDispEnv(current + 0x5C). So when the main loop starts the tasks for frame
+ * N+1, frame N is drawn and waits for its flip (PENDING).
+ *
+ * There each render pass runs the tasks once more with a fraction of the
+ * step: the game itself works out where everything is part of the way to
+ * N+1 (the game is variable-timestep, and fighter movement follows the step
+ * since the movement fix above). The pass then draws that table into frame
+ * N's display rect with the same draw environment frame N used. The sandbox
+ * freezes guest time, drops sound and CD stores and restores the machine
+ * afterwards, so the real frame N+1 runs exactly as it would have. Matches
+ * only; elsewhere the newest game frame is held. */
+#define kGp                0x80072450u
+#define kTaskUpdate        0x8005457Cu   /* tasks(mode, message, step) */
+#define kTaskUpdateReturn  0x80044F44u   /* the main loop, after that call */
+#define kPutDrawEnv        0x8005E13Cu
+#define kGpBuildOT         (kGp + 0x13C8u)   /* table this frame's tasks fill */
+#define kGpShownBuffer     (kGp + 0x13CCu)   /* buffer the pending flip shows */
+#define kGpOtherBuffer     (kGp + 0x13D4u)   /* its DRAWENV draws that area */
+#define kGpStep            (kGp + 0x1330u)
+#define kGpFrameVBlanks    (kGp + 0x12FCu)
+
+extern int g_psx_render_pass_active;
+
+
+typedef struct { uint32_t period; } SimpsonsPassFrame;
+
+static void simpsons_guest_call(struct CPUState* cpu, uint32_t function,
+                                uint32_t a0, uint32_t a1, uint32_t a2) {
+    cpu->gpr[4] = a0; cpu->gpr[5] = a1; cpu->gpr[6] = a2;
+    cpu->gpr[31] = kTaskUpdateReturn;
+    psx_dispatch_call(cpu, function, kTaskUpdateReturn);
+}
+
+static int simpsons_pass(struct CPUState* cpu, void* user, uint32_t alpha_q16) {
+    const SimpsonsPassFrame* frame = (const SimpsonsPassFrame*)user;
+    uint32_t step = (uint32_t)(((uint64_t)frame->period * 68u * alpha_q16) >> 16);
+    if (step == 0) step = 1;
+    psx_mod_write_word(kGpStep, step);   /* what GetStep (0x80044F74) returns */
+    const double t0 = now_seconds();
+    static int task_timing = -1;
+    if (task_timing < 0) task_timing = getenv("SIMPSONS_PASS_TASK_TIMING") != NULL;
+    if (task_timing) {
+        /* Testing: the dispatcher's own loop (0x800545D8..), timing each task. */
+        for (uint32_t node = psx_mod_read_word(kGp + 0xE7Cu); node; node = psx_mod_read_word(node + 4u)) {
+            psx_mod_write_word(kGp + 0xE80u, node);
+            const uint32_t handler = psx_mod_read_word(node + 0x10u);
+            const double h0 = now_seconds();
+            simpsons_guest_call(cpu, handler, 14, 0, step);
+            simpsons_task_time(handler, now_seconds() - h0);
+        }
+        psx_mod_write_word(kGp + 0xE80u, 0);
+    } else {
+        simpsons_guest_call(cpu, kTaskUpdate, 0, 14, step);
+    }
+    const double t1 = now_seconds();
+    simpsons_guest_call(cpu, kPutDrawEnv, psx_mod_read_word(kGpOtherBuffer), 0, 0);
+    simpsons_guest_call(cpu, kDrawOTag, psx_mod_read_word(kGpBuildOT), 0, 0);
+    s_log_pass_task_seconds += t1 - t0;
+    s_log_pass_draw_seconds += now_seconds() - t1;
+    return 1;
+}
+
+static void simpsons_task_update_entry(struct CPUState* cpu, uint32_t address) {
+    (void)address;
+    if (!s_pass_rate || g_psx_render_pass_active) return;
+    if (cpu->gpr[4] != 0 || cpu->gpr[5] != 14 ||
+        (cpu->gpr[31] & 0x1FFFFFFFu) != (kTaskUpdateReturn & 0x1FFFFFFFu)) return;
+    if (!simpsons_match_scene()) return;
+    /* Only while the game itself runs at 60 FPS (one VBlank a frame), and not
+     * while the governor has paused passes: a slower game never pays for
+     * in-between frames, so they cannot drag it down further. */
+    if (psx_mod_read_word(kGpFrameVBlanks) != 1u || now_seconds() < s_pass_resume_at) return;
+    SimpsonsPassFrame user;
+    user.period = 1;
+    const uint32_t shown = psx_mod_read_word(kGpShownBuffer);
+    PSXModRenderPassFrame frame;
+    memset(&frame, 0, sizeof frame);
+    frame.struct_size = sizeof frame;
+    frame.period_vblanks = user.period;
+    frame.shown_after_vblanks = 1;
+    frame.x = psx_mod_read_half(shown + 0x5C);   /* DISPENV.disp */
+    frame.y = psx_mod_read_half(shown + 0x5E);
+    frame.w = psx_mod_read_half(shown + 0x60);
+    frame.h = psx_mod_read_half(shown + 0x62);
+    const double t0 = now_seconds();
+    const uint32_t kept = psx_mod_render_pass_frame(cpu, &frame, simpsons_pass, &user);
+    if (kept) s_log_pass_seconds += now_seconds() - t0;
+    s_log_pass_frames++;
+    s_log_pass_images += kept;
+    s_window_passes += kept;
+    psx_mod_counter_add("simpsons.pass.frames", 1);
+    psx_mod_counter_add("simpsons.pass.images", kept);
+    s_real_task_start = now_seconds();
+}
+
 static void simpsons_pc_activate(void) {
     load_settings();
     if (is_on(s_widescreen)) {
@@ -490,6 +661,22 @@ static void simpsons_pc_activate(void) {
         const char* ref = getenv("SIMPSONS_MOVE_REF");     /* testing: reference step */
         if (ref && atoi(ref) > 0) s_move_ref_step = atoi(ref);
         s_move_fix = !getenv("SIMPSONS_NO_MOVE_FIX");
+    }
+    if (atoi(s_frame_rate) >= 120 &&
+        psx_mod_set_frame_interpolation_source(PSX_MOD_FRAME_SOURCE_FLIP) &&
+        psx_mod_set_render_pass_flip(PSX_MOD_RENDER_PASS_FLIP_PENDING) &&
+        psx_mod_set_frame_interpolation_blend(PSX_MOD_FRAME_INTERPOLATION_HOLD) &&
+        psx_mod_set_frame_interpolation((uint32_t)atoi(s_frame_rate))) {
+        s_pass_rate = (uint32_t)atoi(s_frame_rate);
+        /* The governor pauses passes when the game falls behind, so they may
+         * use all of the presenter's spare time (the runtime default is 80%). */
+        if (!getenv("PSX_RENDER_PASS_BUDGET")) {
+#ifdef _WIN32
+            _putenv_s("PSX_RENDER_PASS_BUDGET", "100");
+#else
+            setenv("PSX_RENDER_PASS_BUDGET", "100", 0);
+#endif
+        }
     }
     if (is_on(s_skip_intro)) (void)psx_mod_set_auto_skip_fmv(1);
 }
@@ -507,6 +694,7 @@ PSX_MOD_CONSTRUCTOR(simpsons_register_mod_plugins) {
     (void)psx_mod_register_function_filter_plugin("simpsons.pc", kPlayMovie, simpsons_skip_movies_filter);
     (void)psx_mod_register_function_filter_plugin("simpsons.pc", kFrameStep, simpsons_copyright_filter);
     (void)psx_mod_register_function_entry_plugin("simpsons.pc", kDrawOTag, simpsons_draw_otag);
+    (void)psx_mod_register_function_entry_plugin("simpsons.pc", kTaskUpdate, simpsons_task_update_entry);
     if (!getenv("SIMPSONS_NO_FAST_WAIT"))
         (void)psx_mod_register_function_filter_plugin("simpsons.pc", kWaitForFlip, simpsons_wait_flip_filter);
     (void)psx_mod_register_instruction_plugin("simpsons.pc", kMoveSiteX, 0x00031040u, simpsons_scale_move);
@@ -514,3 +702,4 @@ PSX_MOD_CONSTRUCTOR(simpsons_register_mod_plugins) {
     (void)psx_mod_register_instruction_plugin("simpsons.pc", kMoveSiteY, 0x00051840u, simpsons_scale_move);
     (void)psx_mod_register_vblank_plugin("simpsons.pc", simpsons_pc_vblank);
 }
+

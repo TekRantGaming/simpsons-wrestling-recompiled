@@ -80,6 +80,27 @@ switches.
   to the framework for this port), so every frame takes one VBlank: the
   game's own timestep stays 1 and its speed is unchanged. Boot, menus and
   loading keep stock CPU timing.
+- **Fighter movement at 60 FPS.** Gravity, pushes and drag change a fighter's
+  velocities per unit of time (`accel * step >> 12`, step at `obj+0x14C`),
+  but the position update (`0x8002E09C`) adds `(vA + vB) * 3/4` once per game
+  frame. Tuned at 20-30 FPS, every velocity-driven move went about 2.5 times
+  as far at 60 FPS: a jump rose ~20,900 units instead of ~8,400-9,400 and left
+  the arena, and walking was about twice as fast. Instruction hooks
+  (`mod_instruction_sites`) scale the velocity by `step / 170` (an average
+  stock frame of 2.5 VBlanks) just before the 3/4, so distance follows time.
+  Only with the 60/120 FPS option; "30 FPS (original)" is untouched.
+- **120 FPS (experimental).** Game logic stays at 60 FPS; each frame gets one
+  in-between image that the game draws itself, using psxrecomp's render passes
+  (`docs/RENDER_PASSES.md`). At the start of frame N+1 (the task update,
+  `0x8005457C`) a pass runs every task again with half the step, so the game
+  works out where everything is halfway to N+1, then draws that ordering
+  table into frame N's display rect with the draw environment frame N used.
+  Guest time is frozen and the machine is restored afterwards, so the real
+  frame runs as if nothing happened. A pass costs about as much as a game
+  frame (6 ms at native resolution, much more at 4K), so passes run only while
+  the game holds 60 FPS, the runtime sheds them when the PC has no time left,
+  and the governor pauses them (with a growing wait) the moment the game falls
+  behind, before it would ever lower the overclock.
 - **Frame-rate governor.** Drawing twice the frames costs the PC twice the
   renderer time. Every quarter second the plugin compares game time with real
   time; if the game falls behind it lowers the overclock (the frame rate drops
@@ -110,9 +131,13 @@ release build, 4K render, smooth outlines, stable geometry, widescreen, VSync
 on), attract-demo matches in two arenas ran at 1.00x speed and a steady 60
 game FPS at the 400% overclock (stock: 20-26 FPS). Emulating a match took
 about 0.4 s of CPU per second of play, against 0.5 s before the PGO/LTO build
-and the fast flip wait (fixed 300% overclock, VSync off). Player walking speed
-measured 68 units per VBlank at both 20-30 FPS and 60 FPS, the same as the
-game's own step table. Linux was checked under WSL2: the launcher starts the
+and the fast flip wait (fixed 300% overclock, VSync off). With the movement
+fix, a standing jump at 60 FPS rises 8,350-8,640 units in 45-47 VBlanks (stock:
+7,000-9,450 in about 44, depending on its frame mix) and walking covers
+215-234 units per VBlank (stock 204-235). 120 FPS mode added an in-between
+frame to 20-65% of frames at native internal resolution with the game at a
+steady 60 FPS; at 4K the passes cost more than a frame has to spare, so they
+mostly stay paused and the game plays at 60 FPS. Linux was checked under WSL2: the launcher starts the
 game, it reaches the title and plays the attract-demo match in 16:9. WSL's
 OpenGL translation is too slow to judge Linux performance, which still needs a
 test on a native Linux install.
@@ -122,6 +147,11 @@ test on a native Linux install.
 - Pausing a match in widescreen puts the TAUNT labels back at their 4:3
   positions and darkens only the 4:3 area until you unpause
   ([#1](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/issues/1)).
+- 120 FPS (experimental): the ring spotlight is missing from the in-between
+  frames, so it flickers; and on most PCs only some frames get an in-between
+  image, so motion is not yet an even 120.
+- 60 FPS: projectiles and special moves use their own movement code and have
+  not been measured against 30 FPS yet.
 
 ## Building
 

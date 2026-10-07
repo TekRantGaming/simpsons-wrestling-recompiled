@@ -341,8 +341,11 @@ struct App {
   static void PageGameplay(trg::Ui& ui) {
     ui.Choice("Frame rate",
               "60 FPS draws every frame the PlayStation dropped during matches, at the original game speed. 30 FPS "
-              "is the original.",
-              "frame_rate", "60", {{"30", "30 FPS (original)"}, {"60", "60 FPS"}});
+              "is the original. 120 FPS (experimental) adds an in-between frame that the game draws itself, on a "
+              "120 Hz or faster display; it needs a lot of CPU, works best at a low internal resolution and pauses "
+              "itself whenever the game would slow down.",
+              "frame_rate", "60",
+              {{"30", "30 FPS (original)"}, {"60", "60 FPS"}, {"120", "120 FPS (experimental)"}});
     ui.Toggle("Skip intro", "Starts at the title screen: no copyright card, Fox Interactive or Big Ape logos.",
               "skip_intro", true);
     ui.Toggle("Unlock everything",
