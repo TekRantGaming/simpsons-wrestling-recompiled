@@ -440,6 +440,10 @@ struct App {
   std::map<std::string, std::string> pad_map, key_map;
   bool inputs_changed = false;
   bool expand_sections = false;  // --expand: open the Controls sections (screenshots)
+  // Controllers seen while the launcher window was open. PLAY shuts SDL down
+  // before the settings are written, and a fresh SDL can take longer than its
+  // short probe to list a wireless pad.
+  size_t pads_seen = 0;
 
   App() { LoadInputFiles(); }
 
@@ -590,16 +594,19 @@ struct App {
   }
 
   void PageControls(trg::Ui& ui) {
-    ui.Choice("Player 1", "Automatic uses a controller when one is connected when you press Play, otherwise the keyboard.",
+    ui.Choice("Player 1",
+              "Automatic uses a controller as soon as one is switched on, even after the game has started. The "
+              "keyboard works too, unless player 2 is on it.",
               "p1_input", "auto", {{"auto", "Automatic"}, {"controller", "Controller"}, {"keyboard", "Keyboard"}});
     ui.Choice("Player 2",
-              "For VS matches. Automatic uses a second controller, or the keyboard when player 1 is on a controller.",
+              "For VS matches. Automatic uses a second controller, or the keyboard when player 1 has a controller. "
+              "It counts the controllers that are on when you press Play.",
               "p2_input", "auto",
               {{"auto", "Automatic"}, {"controller", "Controller"}, {"keyboard", "Keyboard"}, {"none", "Off"}});
     const std::vector<std::string> pads = ConnectedControllers();
     std::string list;
     for (size_t i = 0; i < pads.size(); ++i) list += (i ? "\n" : "") + std::to_string(i + 1) + ". " + pads[i];
-    ui.Info("Connected controllers", pads.empty() ? "None found. Plug one in; it is picked up when you press Play."
+    ui.Info("Connected controllers", pads.empty() ? "None found. Switch one on or plug it in; the game picks it up when it connects."
                                                   : list.c_str());
     ui.SliderInt("Vibration", "Controller rumble strength; 0% switches it off. The game starts with its own Vibration option off: turn it on in the game's Options menu.", "vibration", 100, 0,
                  100, "%d%%", 10);
@@ -664,13 +671,17 @@ struct App {
   }
 
   // The settings.toml device names for players 1 and 2.
+  // Automatic player 1 is routed to a controller even when none is on yet: the
+  // game opens one the moment it connects (a pad switched on after PLAY used
+  // to be ignored for the whole session), and player 1's keyboard keys stay
+  // live beside it while no other player is on the keyboard.
   std::pair<std::string, std::string> InputDevices() const {
-    const size_t pads = ConnectedControllers().size();
+    const size_t pads = std::max(pads_seen, ConnectedControllers().size());
     const std::string c1 = settings.Get("p1_input", "auto"), c2 = settings.Get("p2_input", "auto");
-    const std::string p1 = c1 == "controller" ? "gamepad" : c1 == "keyboard" ? "keyboard"
-                         : pads >= 1 ? "gamepad" : "keyboard";
+    const std::string p1 = c1 == "keyboard" ? "keyboard" : "gamepad";
+    const size_t pads_for_p2 = p1 == "gamepad" ? (pads > 0 ? pads - 1 : 0) : pads;
     std::string p2 = c2 == "controller" ? "gamepad" : c2 == "keyboard" ? "keyboard" : c2 == "none" ? "none"
-                   : pads >= 2 ? "gamepad" : p1 == "gamepad" ? "keyboard" : "none";
+                   : pads_for_p2 >= 1 ? "gamepad" : p1 == "gamepad" && pads >= 1 ? "keyboard" : "none";
     return {p1, p2};
   }
 
@@ -860,8 +871,9 @@ int main(int argc, char** argv) {
   trg::StandaloneHooks hooks;
   hooks.on_start = [&](trg::Launcher& l) { l.config().branding.icon = trg::CreateTextureRGBA(128, 128, icon.data()); };
   hooks.on_stop = [&](trg::Launcher& l) { trg::DestroyTexture(l.config().branding.icon); };
-  int frames = 0;
+  int frames = 0, pad_polls = 0;
   hooks.after_render = [&](trg::Launcher& l, int w, int h) {
+    if (pad_polls++ % 30 == 0) app.pads_seen = ConnectedControllers().size();
     if (!app.picked.empty()) {  // a dropped file: check it on the UI thread
       const std::string p = std::move(app.picked);
       app.picked.clear();

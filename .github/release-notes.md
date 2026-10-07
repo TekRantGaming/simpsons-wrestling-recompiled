@@ -10,7 +10,7 @@ The first release candidate: The Simpsons Wrestling (PlayStation, USA) as a nati
 - **120 FPS (experimental)**: an extra in-between frame drawn by the game itself; the launcher explains its limits when you pick it
 - **Intro skipped** and **everything unlocked** (all wrestlers, both circuits, Bonus Match Up), both optional
 - **Fast loading** for the loading screens
-- **Controllers**: automatic set-up for two players, button remapping, vibration strength and stick deadzone; full keyboard remapping
+- **Controllers**: picked up whenever you switch them on, automatic set-up for two players, button remapping, vibration strength and stick deadzone; full keyboard remapping
 - **Launcher**: monitor choice, fill-the-screen, CRT filter and scanlines, volume and sound delay, save folder shortcut
 
 ### Install

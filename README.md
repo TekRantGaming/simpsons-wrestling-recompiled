@@ -80,7 +80,7 @@ Every function of the game was translated from PlayStation code to C and compile
 3. On the **Game** page, choose the `.cue` file of your disc image, or drop it onto the window. The launcher checks that it is the USA disc. The `.bin` file must sit next to the `.cue`.
 4. Press **PLAY**.
 
-Plug your controller in before pressing PLAY: with **Automatic** (the default) player 1 gets the first controller, or the keyboard when there is none, and player 2 gets the second.
+With **Automatic** (the default), player 1 uses a controller as soon as it is switched on, even after the game has started, and the keyboard works as well. For a VS match, switch on the second controller before pressing PLAY, or play player 2 on the keyboard against a controller.
 
 <sub>Windows may warn that the program is from an unknown publisher (it is not code-signed). Choose **More info**, then **Run anyway**.</sub>
 
