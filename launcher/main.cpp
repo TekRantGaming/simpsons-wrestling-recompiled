@@ -18,6 +18,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -166,6 +167,21 @@ class TomlEditor {
 };
 
 std::string Quote(const std::string& s) { return "\"" + s + "\""; }
+
+// Game controllers SDL sees right now. Opens SDL's controller subsystem when
+// the launcher window has not (hidden launcher, or after PLAY closed it).
+std::vector<std::string> ConnectedControllers() {
+  const bool was_init = SDL_WasInit(SDL_INIT_GAMECONTROLLER) != 0;
+  if (!was_init && SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return {};
+  std::vector<std::string> names;
+  for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+    if (!SDL_IsGameController(i)) continue;
+    const char* name = SDL_GameControllerNameForIndex(i);
+    names.push_back(name ? name : "Controller");
+  }
+  if (!was_init) SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+  return names;
+}
 
 // --------------------------------------------------------------- header ---
 
@@ -336,6 +352,33 @@ struct App {
               false, "Hidden", "Shown");
   }
 
+  static void PageControls(trg::Ui& ui) {
+    ui.Choice("Player 1", "Automatic uses a controller when one is connected when you press Play, otherwise the keyboard.",
+              "p1_input", "auto", {{"auto", "Automatic"}, {"controller", "Controller"}, {"keyboard", "Keyboard"}});
+    ui.Choice("Player 2",
+              "For VS matches. Automatic uses a second controller, or the keyboard when player 1 is on a controller.",
+              "p2_input", "auto",
+              {{"auto", "Automatic"}, {"controller", "Controller"}, {"keyboard", "Keyboard"}, {"none", "Off"}});
+    const std::vector<std::string> pads = ConnectedControllers();
+    std::string list;
+    for (size_t i = 0; i < pads.size(); ++i) list += (i ? "\n" : "") + std::to_string(i + 1) + ". " + pads[i];
+    ui.Info("Connected controllers", pads.empty() ? "None found. Plug one in; it is picked up when you press Play."
+                                                  : list.c_str());
+    ui.Info("Keyboard", "Arrows move, X Cross, S Circle, Z Square, A Triangle, Enter Start, Right Shift Select, "
+                        "Q W E R for L1 R1 L2 R2. Change them in keybinds.ini in the game folder.");
+  }
+
+  // The settings.toml device names for players 1 and 2.
+  std::pair<std::string, std::string> InputDevices() const {
+    const size_t pads = ConnectedControllers().size();
+    const std::string c1 = settings.Get("p1_input", "auto"), c2 = settings.Get("p2_input", "auto");
+    const std::string p1 = c1 == "controller" ? "gamepad" : c1 == "keyboard" ? "keyboard"
+                         : pads >= 1 ? "gamepad" : "keyboard";
+    std::string p2 = c2 == "controller" ? "gamepad" : c2 == "keyboard" ? "keyboard" : c2 == "none" ? "none"
+                   : pads >= 2 ? "gamepad" : p1 == "gamepad" ? "keyboard" : "none";
+    return {p1, p2};
+  }
+
   void PageAbout(trg::Ui& ui) {
     ui.Paragraph(
         "The Simpsons Wrestling, recompiled from the PlayStation game into a native PC program with "
@@ -368,6 +411,11 @@ struct App {
     // Widescreen and the frame rate belong to the game's plugin (launcher.txt);
     // the generic presenter blend stays off so frames are never doubled.
     toml.Set("video", "frame_interpolation", "false");
+    // Release runtimes default player 1 to the keyboard only; the launcher
+    // assigns the devices (each controller goes to one player at most).
+    const auto [p1, p2] = InputDevices();
+    toml.Set("controller", "p1_device", Quote(p1));
+    toml.Set("controller", "p2_device", Quote(p2));
     toml.Set("launcher", "skip_launcher", "true");
     return toml.Save();
   }
@@ -449,6 +497,7 @@ int main(int argc, char** argv) {
       {"Display", "Window, widescreen and how the picture reaches your screen.", App::PageDisplay},
       {"Graphics", "HD rendering, smooth outlines and the final picture.", App::PageGraphics},
       {"Gameplay", "Frame rate, the intro and what is unlocked.", App::PageGameplay},
+      {"Controls", "Controllers and the keyboard for players 1 and 2.", App::PageControls},
       {"About", "About this port, and where your settings live.", [&](trg::Ui& ui) { app.PageAbout(ui); }},
   };
   config.start_page = start_page >= 0 ? start_page : app.Ready() ? 1 : 0;

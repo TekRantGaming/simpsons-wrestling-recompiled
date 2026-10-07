@@ -26,6 +26,11 @@ Every feature can be switched off in the launcher.
    window). The launcher checks that it is the USA disc.
 3. Press **PLAY**.
 
+Controllers work out of the box: with **Automatic** (the default) player 1 gets
+the first connected controller when you press PLAY, or the keyboard if none is
+connected, and player 2 gets a second controller (or the keyboard). Connect your
+controller before pressing PLAY.
+
 The launcher's settings are kept in `launcher.txt`, the renderer's in
 `settings.toml`, and memory-card saves in `saves/`, all next to the program.
 Hold **Shift** while starting it to show the launcher if you have hidden it.
@@ -38,6 +43,7 @@ Hold **Shift** while starting it to show the launcher if you have hidden it.
 | Display | Window mode (windowed, borderless, exclusive), window size, widescreen, VSync |
 | Graphics | Render resolution (240p to 8K, or your screen's), smooth outlines, smooth textures, stable geometry, sharpening, brightness |
 | Gameplay | Frame rate (30 or 60), skip intro, unlock everything, frame-rate counter |
+| Controls | Player 1 and 2 input (automatic, controller, keyboard), connected controllers, keyboard keys |
 | About | Show the launcher at startup, open the game folder, reset all settings |
 
 ## How the features work
