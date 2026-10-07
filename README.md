@@ -11,7 +11,7 @@ disc image of the USA release.
 
 | Feature | What it does |
 | --- | --- |
-| **16:9 widescreen** | Matches render wider than 4:3 with real extra picture: the arena and crowd fill the sides. Menus, the title screen, character select and loading screens keep the original 4:3 picture. |
+| **16:9 widescreen** | Matches render wider than 4:3 with real extra picture: the arena and crowd fill the sides, nothing is culled at the new edges, and the HUD (portraits, health and power bars, TAUNT, win trophies) sits at the screen edges. Menus, the title screen, character select and loading screens keep the original 4:3 picture. |
 | **HD rendering with smooth outlines** | The game is drawn at up to 8K and scaled down to your window (supersampling), then FXAA, so the characters' black outlines and every other edge are smooth. Stable geometry removes the PlayStation's polygon wobble. |
 | **Higher frame rate at normal game speed** | Matches run at up to a real 60 FPS (the original runs at 20-30). The game already scales its movement by the time each frame took, so it plays at exactly the original speed. If your PC cannot draw 60 FPS, the frame rate drops instead of the game slowing down. |
 | **Intro skipped** | Boots straight to the title screen: no copyright card, Fox Interactive or Big Ape logo movies. |
@@ -53,6 +53,19 @@ switches.
 - **Widescreen** uses psxrecomp's native-wide renderer
   (`psx_mod_set_fixed_display_aspect(16, 9)`) with a world-scene predicate, so
   only matches go wide.
+- **Edge culling.** The arena is drawn cell by cell (`0x80054714`): each cell's
+  centre is projected and the cell skipped unless `-100 <= SX < 612`, a 100 px
+  margin around the 512-wide screen. In 16:9 that left 15 px, so crowd blocks,
+  floor and props vanished while still on screen. `game.toml
+  [widescreen.cull]` widens both immediates (`0x8005496C`, `0x80054974`) by the
+  live reveal plus a 64 px guard; at 4:3 they are unchanged.
+- **HUD at the edges.** The game links its HUD into the last slots of each
+  frame's ordering table: slot 2038 holds both players' panels, slot 2047 the
+  TAUNT labels (y 166) and win trophies (y 20) along with centred text. At
+  DrawOTag (`0x8005E0CC`) the plugin tags those packets left or right
+  (`psx_mod_tag_hud_primitive`); centred text such as the round banner and
+  DEMO stays put. The bar outlines are polylines, so this port also taught
+  psxrecomp's renderer to move tagged polylines (they were never shifted).
 - **60 FPS.** The main loop (`0x80044F1C`) counts the VBlanks since the last
   frame (`0x80044F80`) and moves everything by a step from a linear table
   (`0x8006ECFC`, 68 per VBlank). A match runs at 20-30 FPS only because a frame
@@ -85,6 +98,12 @@ game's own step table. Linux was checked under WSL2: the launcher starts the
 game, it reaches the title and plays the attract-demo match in 16:9. WSL's
 OpenGL translation is too slow to judge Linux performance, which still needs a
 test on a native Linux install.
+
+## Known issues
+
+- Pausing a match in widescreen puts the TAUNT labels back at their 4:3
+  positions and darkens only the 4:3 area until you unpause
+  ([details](docs/issues/pause-menu-widescreen.md)).
 
 ## Building
 

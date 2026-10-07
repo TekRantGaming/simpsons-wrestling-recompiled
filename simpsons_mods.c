@@ -279,6 +279,102 @@ static int simpsons_copyright_filter(struct CPUState* cpu, uint32_t address) {
     return is_on(s_skip_intro) ? simpsons_short_copyright(cpu, address) : 0;
 }
 
+/* HUD to the screen edges. In native-wide 16:9 the game's 512-wide picture
+ * sits centred, so its HUD stays where the 4:3 edges were. The game links its
+ * HUD into the last slots of the frame's ordering table (DrawOTag 0x8005E0CC,
+ * forward OT of 0x801 slots at buf+0x70):
+ *   slot 2038: both players' panels (portrait, health and power bars, button
+ *              icons). Left panel x < 237, right panel x >= 280.
+ *   slot 2047: the TAUNT labels (y 166) and win trophies (y 20) near the
+ *              edges, plus centred text (the "X VERSUS Y" banner, DEMO, the
+ *              pause title) that must stay centred.
+ * At DrawOTag every drawing command in those slots is tagged with its edge,
+ * and the compositor moves it by the live reveal (nothing moves at 4:3). The
+ * previous frame's tags are cleared first: packet addresses are reused. */
+#define kDrawOTag         0x8005E0CCu
+#define kOtSlots          0x801u
+#define kSlotHudPanels    2038u
+#define kSlotHudLabels    2047u
+#define kMaxHudTags       256
+
+static uint32_t s_hud_tags[kMaxHudTags];
+static int      s_hud_ntags = 0;
+
+static uint32_t gp0_command_words(uint32_t q, uint32_t packet_end) {
+    const uint32_t c = psx_mod_read_word(q) >> 24;
+    if (c >= 0x20 && c < 0x40) {                 /* polygon */
+        const uint32_t v = (c & 0x08) ? 4u : 3u, t = (c & 0x04) ? 1u : 0u, g = (c & 0x10) ? 1u : 0u;
+        return 1u + v * (1u + t) + g * (v - 1u);
+    }
+    if (c >= 0x40 && c < 0x60) {                 /* line; polyline ends at 0x5xxx5xxx */
+        if (!(c & 0x08)) return (c & 0x10) ? 4u : 3u;
+        uint32_t t = q + 8u;
+        while (t < packet_end && (psx_mod_read_word(t) & 0xF000F000u) != 0x50005000u) t += 4u;
+        return (t - q) / 4u + 1u;
+    }
+    if (c >= 0x60 && c < 0x80)                   /* rectangle */
+        return 2u + ((c & 0x04) ? 1u : 0u) + (((c >> 3) & 3u) == 0u ? 1u : 0u);
+    if (c >= 0xA0 && c < 0xC0) return 0u;        /* CPU->VRAM: image data follows */
+    if (c >= 0x80 && c < 0xA0) return 4u;
+    if (c == 0x02 || (c >= 0xC0 && c < 0xE0)) return 3u;
+    return 1u;
+}
+
+static int simpsons_hud_edge(uint32_t slot, int32_t x, int32_t y) {
+    if (slot == kSlotHudPanels) return x < 256 ? -1 : 1;
+    const int label_row = (y >= 160 && y <= 172) || (y >= 14 && y <= 26);
+    if (!label_row) return 0;
+    return x < 128 ? -1 : x >= 384 ? 1 : 0;
+}
+
+static void simpsons_tag_slot(uint32_t ot, uint32_t slot) {
+    const uint32_t stop = ot + 4u * (slot + 1u);
+    uint32_t link = psx_mod_read_word(ot + 4u * slot) & 0xFFFFFFu;
+    for (int packets = 0; link != 0xFFFFFFu && packets < 512; ++packets) {
+        const uint32_t p = 0x80000000u | link;
+        if (p == stop) break;
+        const uint32_t hdr = psx_mod_read_word(p);
+        const uint32_t end = p + 4u + 4u * (hdr >> 24);
+        for (uint32_t q = p + 4u; q < end;) {
+            const uint32_t w0 = psx_mod_read_word(q), op = w0 >> 24;
+            const uint32_t words = gp0_command_words(q, end);
+            if (!words) break;
+            if (op >= 0x20 && op < 0x80) {
+                const uint32_t xy = psx_mod_read_word(q + 4u);
+                int32_t x = (int16_t)(xy & 0xFFFFu);
+                if (op >= 0x60 && !(op & 0x04)) {    /* untextured rect: classify by centre */
+                    const uint32_t size = (op >> 3) & 3u;
+                    x += (size == 1u ? 1 : size == 2u ? 8 : size == 3u ? 16
+                          : (int32_t)(psx_mod_read_word(q + 8u) & 0xFFFFu)) / 2;
+                }
+                const int edge = simpsons_hud_edge(slot, x, (int16_t)(xy >> 16));
+                if (edge && s_hud_ntags < kMaxHudTags) {
+                    psx_mod_tag_hud_primitive(q - 4u, edge);
+                    s_hud_tags[s_hud_ntags++] = q - 4u;
+                }
+            }
+            q += 4u * words;
+        }
+        link = hdr & 0xFFFFFFu;
+    }
+}
+
+static void simpsons_draw_otag(struct CPUState* cpu, uint32_t address) {
+    (void)address;
+    for (int i = 0; i < s_hud_ntags; ++i) psx_mod_tag_hud_primitive(s_hud_tags[i], 0);
+    s_hud_ntags = 0;
+    psx_mod_counter_add("simpsons.hud.drawotag", 1);
+    if (!is_on(s_widescreen) || !simpsons_match_scene()) {
+        psx_mod_counter_add("simpsons.hud.not_match", 1);
+        return;
+    }
+    const uint32_t ot = cpu->gpr[4];             /* a0: &ot[0] */
+    if ((ot & 0xFF000000u) != 0x80000000u || (ot & 3u)) return;
+    simpsons_tag_slot(ot, kSlotHudPanels);
+    simpsons_tag_slot(ot, kSlotHudLabels);
+    psx_mod_counter_add("simpsons.hud.tags", (uint32_t)s_hud_ntags);
+}
+
 static void simpsons_pc_activate(void) {
     load_settings();
     if (is_on(s_widescreen)) {
@@ -307,5 +403,6 @@ PSX_MOD_CONSTRUCTOR(simpsons_register_mod_plugins) {
      * The settings file decides whether they change anything. */
     (void)psx_mod_register_function_filter_plugin("simpsons.pc", kPlayMovie, simpsons_skip_movies_filter);
     (void)psx_mod_register_function_filter_plugin("simpsons.pc", kFrameStep, simpsons_copyright_filter);
+    (void)psx_mod_register_function_entry_plugin("simpsons.pc", kDrawOTag, simpsons_draw_otag);
     (void)psx_mod_register_vblank_plugin("simpsons.pc", simpsons_pc_vblank);
 }

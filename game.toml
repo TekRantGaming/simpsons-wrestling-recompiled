@@ -38,6 +38,7 @@ strict = true
 mod_function_entry_funcs = [
   "0x80044628",  # PlayMovie(index, flag): Skip Intro returns at once for the logos
   "0x80044F74",  # frame step getter: Skip Intro ends the copyright card's 5 s loop
+  "0x8005E0CC",  # DrawOTag: widescreen HUD packets are tagged with their screen edge
 ]
 
 [runtime]
@@ -48,6 +49,19 @@ overlay_cache = true
 [video]
 renderer = "opengl"
 aspect_ratio = "4:3"
+
+# Widescreen (the simpsons.pc plugin selects 16:9; these are identity at 4:3).
+# The arena is drawn cell by cell (0x80054714): each 256-unit cell's centre is
+# projected and the whole cell skipped unless -100 <= SX < 612, a 100 px margin
+# around the 512-wide screen. In 16:9 the view shows 85 px more per side, so
+# cells (crowd blocks, floor, props) vanished while still on screen. Both
+# immediates take the live margin: keep -100-m <= SX < 612+m.
+[widescreen.cull]
+bias_sites  = ["0x8005496C"]   # addiu v0,v0,0x64   SX + 100
+range_sites = ["0x80054974"]   # sltiu v0,v0,0x2C8  < 512 + 2*100
+# 64 px beyond the original margin (cells drawn until their centre is 164 px
+# past the wide edge); costs no measurable primitives. Still 0 at 4:3.
+guard_pixels = 64
 
 [controller]
 default_mode = "digital"
