@@ -13,7 +13,7 @@ disc image of the USA release.
 | --- | --- |
 | **16:9 widescreen** | Matches render wider than 4:3 with real extra picture: the arena and crowd fill the sides. Menus, the title screen, character select and loading screens keep the original 4:3 picture. |
 | **HD rendering with smooth outlines** | The game is drawn at up to 8K and scaled down to your window (supersampling), then FXAA, so the characters' black outlines and every other edge are smooth. Stable geometry removes the PlayStation's polygon wobble. |
-| **Higher frame rate at normal game speed** | Matches run at a real 60 FPS (the original runs at 20-30). The game already scales its movement by the time each frame took, so it plays at exactly the original speed. |
+| **Higher frame rate at normal game speed** | Matches run at up to a real 60 FPS (the original runs at 20-30). The game already scales its movement by the time each frame took, so it plays at exactly the original speed. If your PC cannot draw 60 FPS, the frame rate drops instead of the game slowing down. |
 | **Intro skipped** | Boots straight to the title screen: no copyright card, Fox Interactive or Big Ape logo movies. |
 | **Everything unlocked** | All wrestlers (Bumblebee Man, Moe, Frink, Flanders...), the Defender and Champion circuits, and Bonus Match Up. |
 
@@ -47,9 +47,9 @@ psxrecomp plugin (package `mods/preloaded/packages/simpsons.pc`). It never
 patches the game's code; it reads the game's own state and the launcher's
 switches.
 
-- **Match detection.** The top-level mode byte at `0x8007398C` is 0 in a match
-  (1 title, 3 menus and loading) and `0x800732E4` is set once the match's
-  wrestlers exist. This gates widescreen and the frame rate.
+- **Match detection.** The mode byte at `0x8007398C` is 0 in a match (and
+  during boot), and `0x800732E4` is set once the match's wrestlers exist. Both
+  together gate widescreen and the frame rate.
 - **Widescreen** uses psxrecomp's native-wide renderer
   (`psx_mod_set_fixed_display_aspect(16, 9)`) with a world-scene predicate, so
   only matches go wide.
@@ -57,10 +57,15 @@ switches.
   frame (`0x80044F80`) and moves everything by a step from a linear table
   (`0x8006ECFC`, 68 per VBlank). A match runs at 20-30 FPS only because a frame
   costs more than one VBlank of R3000A time. During matches the plugin
-  overclocks the emulated CPU to 300% (`psx_mod_set_cpu_overclock`, added to
-  the framework for this port), so every frame takes one VBlank: the game's
-  own timestep stays 1 and its speed is unchanged. Boot, menus and loading keep
-  stock CPU timing.
+  overclocks the emulated CPU up to 300% (`psx_mod_set_cpu_overclock`, added
+  to the framework for this port), so every frame takes one VBlank: the
+  game's own timestep stays 1 and its speed is unchanged. Boot, menus and
+  loading keep stock CPU timing.
+- **Frame-rate governor.** Drawing twice the frames costs the PC twice the
+  renderer time. Every quarter second the plugin compares game time with real
+  time; if the game falls behind it lowers the overclock (the frame rate drops
+  toward the original 20-30), and it raises it again when there is headroom.
+  `SIMPSONS_GOVERNOR_LOG=<file>` logs the level, game FPS and speed every 2 s.
 - **Skip intro.** Entry hooks (`game.toml` `mod_function_entry_funcs`) end the
   copyright card's 5-second loop in the boot routine (`0x8001D0F8`) and return
   straight from PlayMovie (`0x80044628`) for the two logo movies. The memory
@@ -69,6 +74,17 @@ switches.
   (`0x80072BF0`, `0x80072BF2`, `0x80072BD0`) and clears the five hidden
   wrestlers' lock words (`0x8006DCE4`..`0x8006DCF4`, 0 = unlocked, as the game
   itself writes at `0x80024F24`).
+
+## Tested
+
+On the developer's Windows PC (release build, 4K render, smooth outlines,
+stable geometry, widescreen), attract-demo matches ran at 1.00x speed and
+57-60 game FPS with the governor (stock: 20-26 FPS). Player walking speed
+measured 68 units per VBlank at both 20-30 FPS and 60 FPS, the same as the
+game's own step table. Linux was checked under WSL2: the launcher starts the
+game, it reaches the title and plays the attract-demo match in 16:9. WSL's
+OpenGL translation is too slow to judge Linux performance, which still needs a
+test on a native Linux install.
 
 ## Building
 

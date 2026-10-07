@@ -26,6 +26,7 @@
 #include <windows.h>
 #else
 #include <limits.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -125,10 +126,10 @@ static void simpsons_unlock_vblank(void) {
             psx_mod_write_word(kHiddenWrestlerLocks + 4 * i, 0);
 }
 
-/* A match is on screen: the top-level mode byte is 0 (1 title, 2 pre-match,
- * 3 menus and loading) and the match has its two wrestlers set up. Boot also
- * has mode 0, but no wrestlers. Only matches go wide; the 2D title, menus,
- * select screens and loading screens stay 4:3 with side bars. */
+/* A match is on screen: the top-level mode byte is 0 only in a match (and
+ * during boot) and 0x800732E4 is set once the match's wrestlers exist. Only
+ * matches go wide; the 2D title, menus, select and loading screens stay 4:3
+ * with side bars. */
 #define kGameMode      0x8007398Cu
 #define kMatchWrestlers 0x800732E4u
 
@@ -142,12 +143,107 @@ static int simpsons_match_scene(void) {
  * more than one VBlank of R3000A time, so with a faster CPU every frame takes
  * one VBlank: real 60 FPS frames at the original game speed. Only matches are
  * overclocked; boot, menus and loading keep stock timing (some boot code
- * stalls at 4x). 300% keeps every measured match frame at one VBlank. */
-static uint32_t s_overclock = 0;
-static uint32_t s_overclock_now = 100;
+ * stalls at 4x).
+ *
+ * Drawing twice the frames costs the host twice the renderer time, and when
+ * the PC cannot keep up the whole machine falls behind real time, which would
+ * slow the game down. So the overclock is governed: every half second of
+ * guest VBlanks it compares guest time with wall-clock time and steps the
+ * overclock down when the game runs slow, and back up (with a growing wait
+ * after each failed attempt) when there is headroom. The game then always
+ * plays at its original speed, at as many frames as the PC can draw. */
+#define kOverclockStep      50u
+#define kGovernorWindow     15u     /* guest VBlanks per measurement (1/4 s) */
+#define kGovernorSlow       0.97    /* below: step down */
+#define kGovernorHealthy    0.995   /* at or above: may step up */
+
+static uint32_t s_overclock = 0;      /* ceiling the player asked for; 0 = off */
+static int      s_governed = 1;       /* SIMPSONS_GOVERNOR=0 pins the level (testing) */
+static uint32_t s_overclock_level = 0;/* governed level used in matches */
+static uint32_t s_overclock_now = 100;/* what the runtime currently has */
+static double   s_window_start = 0.0;
+static uint32_t s_window_vblanks = 0;
+static double   s_raise_after = 0.0;  /* wall time before the next step up */
+static double   s_raise_backoff = 2.0;/* seconds; doubles after each failed raise */
+static int      s_raised_last = 0;
+
+static double now_seconds(void) {
+#ifdef _WIN32
+    static LARGE_INTEGER freq;
+    LARGE_INTEGER t;
+    if (!freq.QuadPart) QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t);
+    return (double)t.QuadPart / (double)freq.QuadPart;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+#endif
+}
+
+static void simpsons_govern(void) {
+    const double t = now_seconds();
+    if (s_window_vblanks == 0) s_window_start = t;
+    if (++s_window_vblanks < kGovernorWindow) return;
+    const double speed = (kGovernorWindow / 59.94) / (t - s_window_start);
+    s_window_vblanks = 0;
+    const int healthy = speed >= kGovernorHealthy;
+    if (speed < kGovernorSlow) {
+        /* Behind real time: back off at once, further when far behind, and
+         * wait longer before trying again if a raise just caused this. */
+        const uint32_t drop = speed < 0.85 ? 2u * kOverclockStep : kOverclockStep;
+        s_overclock_level = s_overclock_level > 100u + drop ? s_overclock_level - drop : 100u;
+        if (s_raised_last && s_raise_backoff < 64.0) s_raise_backoff *= 2.0;
+        s_raised_last = 0;
+        s_raise_after = t + s_raise_backoff;
+    } else if (healthy && s_raised_last && t >= s_raise_after) {
+        /* The last raise held for its trial period. */
+        s_raised_last = 0;
+        if (s_raise_backoff > 2.0) s_raise_backoff *= 0.5;
+        s_raise_after = t + s_raise_backoff;
+    } else if (healthy && !s_raised_last && s_overclock_level < s_overclock && t >= s_raise_after) {
+        s_overclock_level += kOverclockStep;
+        s_raised_last = 1;
+        s_raise_after = t + 3.0;    /* trial period */
+    }
+}
+
+/* SIMPSONS_GOVERNOR_LOG=<file>: every 2 s of wall time, append the overclock
+ * level, the game's own frames per second (its main loop counts frames at
+ * 0x800730D0) and the game speed (guest VBlanks per wall second / 59.94). */
+#define kGameFrameCounter 0x800730D0u
+static FILE*    s_gov_log = NULL;
+static int      s_gov_log_init = 0;
+static double   s_log_t0 = 0.0;
+static uint32_t s_log_frames0 = 0, s_log_vblanks = 0;
+
+static void simpsons_governor_log(void) {
+    if (!s_gov_log_init) {
+        s_gov_log_init = 1;
+        const char* path = getenv("SIMPSONS_GOVERNOR_LOG");
+        if (path && *path) s_gov_log = fopen(path, "w");
+    }
+    if (!s_gov_log) return;
+    const double t = now_seconds();
+    const uint32_t frames = psx_mod_read_word(kGameFrameCounter);
+    ++s_log_vblanks;
+    if (s_log_t0 == 0.0) { s_log_t0 = t; s_log_frames0 = frames; s_log_vblanks = 0; return; }
+    if (t - s_log_t0 < 2.0) return;
+    fprintf(s_gov_log, "match=%d level=%u game_fps=%.1f speed=%.3f\n", simpsons_match_scene(), s_overclock_now,
+            (double)(frames - s_log_frames0) / (t - s_log_t0), (double)s_log_vblanks / 59.94 / (t - s_log_t0));
+    fflush(s_gov_log);
+    s_log_t0 = t; s_log_frames0 = frames; s_log_vblanks = 0;
+}
 
 static void simpsons_frame_rate_vblank(void) {
-    const uint32_t want = (s_overclock && simpsons_match_scene()) ? s_overclock : 100u;
+    simpsons_governor_log();
+    uint32_t want = 100u;
+    if (s_overclock && simpsons_match_scene()) {
+        if (s_governed) simpsons_govern();
+        want = s_overclock_level;
+    } else {
+        s_window_vblanks = 0;
+    }
     if (want != s_overclock_now && psx_mod_set_cpu_overclock(want)) s_overclock_now = want;
 }
 
@@ -192,6 +288,9 @@ static void simpsons_pc_activate(void) {
     if (atoi(s_frame_rate) >= 60) {
         const char* oc = getenv("SIMPSONS_OVERCLOCK");
         s_overclock = oc ? (uint32_t)atoi(oc) : 300u;
+        s_overclock_level = s_overclock;
+        const char* gov = getenv("SIMPSONS_GOVERNOR");
+        s_governed = !(gov && gov[0] == '0');
     }
     if (is_on(s_skip_intro)) (void)psx_mod_set_auto_skip_fmv(1);
 }
