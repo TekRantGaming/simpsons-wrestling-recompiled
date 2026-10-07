@@ -5,7 +5,7 @@
 // recompiled game (SimpsonsWrestling_Recompiled) with the chosen disc. The PC
 // features the game's plugin applies (simpsons_mods.c) read launcher.txt too.
 //
-//   SimpsonsWrestling [--page N] [--ready] [--screenshot out.ppm]
+//   SimpsonsWrestling [--page N] [--ready] [--expand] [--screenshot out.ppm]
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -16,6 +16,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -105,7 +107,8 @@ DiscCheck CheckDisc(const std::string& cue) {
 
 // ---------------------------------------------------------- settings.toml ---
 
-// Sets `key = value` in [section] of the runtime's settings.toml, keeping
+// Sets `key = value` in [section] of the runtime's settings.toml (and of its
+// input.ini / keybinds.ini, which use the same `key = value` lines), keeping
 // everything else in the file (the runtime writes its own keys there too).
 class TomlEditor {
  public:
@@ -144,6 +147,38 @@ class TomlEditor {
     lines_.insert(lines_.begin() + last + 1, key + " = " + value);
   }
 
+  // The value of `key` in [section], without quotes; empty when absent.
+  std::string Get(const std::string& section, const std::string& key) const {
+    const std::string header = "[" + section + "]";
+    bool in = false;
+    for (const std::string& line : lines_) {
+      const std::string t = Trim(line);
+      if (!t.empty() && t[0] == '[') {
+        in = t == header;
+        continue;
+      }
+      const size_t eq = t.find('=');
+      if (!in || eq == std::string::npos || Trim(t.substr(0, eq)) != key) continue;
+      std::string v = Trim(t.substr(eq + 1));
+      if (v.size() >= 2 && v.front() == '"' && v.back() == '"') v = v.substr(1, v.size() - 2);
+      return v;
+    }
+    return {};
+  }
+
+  // Sections named "<prefix>N" (keybinds.ini: player1, player2...).
+  std::vector<std::string> SectionsStartingWith(const std::string& prefix) const {
+    std::vector<std::string> out;
+    for (const std::string& line : lines_) {
+      const std::string t = Trim(line);
+      if (t.size() > 2 + prefix.size() && t[0] == '[' && t.compare(1, prefix.size(), prefix) == 0)
+        out.push_back(t.substr(1, t.size() - 2));
+    }
+    return out;
+  }
+
+  bool Exists() const { return !lines_.empty(); }
+
   bool Save() const {
     const std::string tmp = path_ + ".tmp";
     {
@@ -172,15 +207,148 @@ std::string Quote(const std::string& s) { return "\"" + s + "\""; }
 // the launcher window has not (hidden launcher, or after PLAY closed it).
 std::vector<std::string> ConnectedControllers() {
   const bool was_init = SDL_WasInit(SDL_INIT_GAMECONTROLLER) != 0;
-  if (!was_init && SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return {};
+  const Uint32 subsystems = SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS;
+  if (!was_init && SDL_InitSubSystem(subsystems) != 0) return {};
+  if (!was_init) {
+    // Without the launcher window nothing has pumped SDL's events yet, and
+    // some controllers arrive as device-added events: give them a moment.
+    for (int i = 0; i < 10 && SDL_NumJoysticks() == 0; ++i) {
+      SDL_PumpEvents();
+      SDL_Delay(25);
+    }
+  }
   std::vector<std::string> names;
   for (int i = 0; i < SDL_NumJoysticks(); ++i) {
     if (!SDL_IsGameController(i)) continue;
     const char* name = SDL_GameControllerNameForIndex(i);
     names.push_back(name ? name : "Controller");
   }
-  if (!was_init) SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+  if (!was_init) SDL_QuitSubSystem(subsystems);
   return names;
+}
+
+// ----------------------------------------------------------- input files ---
+
+// The PlayStation buttons the Controls page remaps: their input.ini /
+// keybinds.ini key, label, default controller input and default keyboard key
+// (the runtime's own defaults).
+struct PadButton {
+  const char* key;
+  const char* label;
+  const char* pad;
+  const char* keyboard;
+};
+constexpr PadButton kPadButtons[] = {
+    {"cross", "Cross", "a", "X"},           {"circle", "Circle", "b", "S"},
+    {"square", "Square", "x", "Z"},         {"triangle", "Triangle", "y", "A"},
+    {"l1", "L1", "leftshoulder", "Q"},      {"r1", "R1", "rightshoulder", "W"},
+    {"l2", "L2", "lefttrigger", "E"},       {"r2", "R2", "righttrigger", "R"},
+    {"start", "Start", "start", "Return"},  {"select", "Select", "back", "Right Shift"},
+    {"l3", "L3", "leftstick", "T"},         {"r3", "R3", "rightstick", "Y"},
+    {"up", "Up", "dpup", "Up"},             {"down", "Down", "dpdown", "Down"},
+    {"left", "Left", "dpleft", "Left"},     {"right", "Right", "dpright", "Right"},
+};
+constexpr int kRemappableOnController = 12;  // the directions keep the d-pad and left stick
+
+// Controller inputs a button can be assigned to (SDL names, as input.ini uses).
+struct PadInput {
+  const char* name;
+  const char* label;
+};
+constexpr PadInput kPadInputs[] = {
+    {"a", "A / Cross"},           {"b", "B / Circle"},          {"x", "X / Square"},
+    {"y", "Y / Triangle"},        {"leftshoulder", "LB / L1"},  {"rightshoulder", "RB / R1"},
+    {"lefttrigger", "LT / L2"},   {"righttrigger", "RT / R2"},  {"back", "View / Select"},
+    {"start", "Menu / Start"},    {"leftstick", "Left stick click"}, {"rightstick", "Right stick click"},
+    {"dpup", "D-pad up"},         {"dpdown", "D-pad down"},     {"dpleft", "D-pad left"},
+    {"dpright", "D-pad right"},   {"", "Nothing"},
+};
+
+const char* PadInputLabel(const std::string& name) {
+  for (const PadInput& in : kPadInputs)
+    if (name == in.name) return in.label;
+  return name.empty() ? "Nothing" : name.c_str();
+}
+
+// The full default input.ini the runtime writes on its first run, for a
+// launcher that runs before the game ever has.
+const char* const kDefaultInputIni =
+    "; PSXRecomp input mapping. PSX buttons are active when any listed source is pressed.\n"
+    "; Sources use SDL/Xbox names: a,b,x,y,back,start,leftshoulder,rightshoulder,\n"
+    "; lefttrigger[/+],righttrigger[/+],leftstick,rightstick (stick clicks -> L3/R3),\n"
+    "; dpup,dpdown,dpleft,dpright,leftx-/leftx+/lefty-/lefty+.\n"
+    "\n[controller]\nenabled = true\ndevice = 0\ndeadzone = 3277\n"
+    "\n[mapping]\nup = dpup\ndown = dpdown\nleft = dpleft\nright = dpright\ncross = a\ncircle = b\n"
+    "square = x\ntriangle = y\nl1 = leftshoulder\nr1 = rightshoulder\nl2 = lefttrigger\nr2 = righttrigger\n"
+    "l3 = leftstick\nr3 = rightstick\nstart = start\nselect = back\nls_up = lefty-\nls_down = lefty+\n"
+    "ls_left = leftx-\nls_right = leftx+\nrs_up = righty-\nrs_down = righty+\nrs_left = rightx-\n"
+    "rs_right = rightx+\n";
+
+// ImGui key -> the SDL key name keybinds.ini uses (SDL_GetScancodeName).
+std::string KeyNameForImGuiKey(ImGuiKey key) {
+  struct Pair {
+    ImGuiKey key;
+    SDL_Scancode code;
+  };
+  static const Pair kPairs[] = {
+      {ImGuiKey_Tab, SDL_SCANCODE_TAB},           {ImGuiKey_LeftArrow, SDL_SCANCODE_LEFT},
+      {ImGuiKey_RightArrow, SDL_SCANCODE_RIGHT},  {ImGuiKey_UpArrow, SDL_SCANCODE_UP},
+      {ImGuiKey_DownArrow, SDL_SCANCODE_DOWN},    {ImGuiKey_PageUp, SDL_SCANCODE_PAGEUP},
+      {ImGuiKey_PageDown, SDL_SCANCODE_PAGEDOWN}, {ImGuiKey_Home, SDL_SCANCODE_HOME},
+      {ImGuiKey_End, SDL_SCANCODE_END},           {ImGuiKey_Insert, SDL_SCANCODE_INSERT},
+      {ImGuiKey_Delete, SDL_SCANCODE_DELETE},     {ImGuiKey_Backspace, SDL_SCANCODE_BACKSPACE},
+      {ImGuiKey_Space, SDL_SCANCODE_SPACE},       {ImGuiKey_Enter, SDL_SCANCODE_RETURN},
+      {ImGuiKey_LeftCtrl, SDL_SCANCODE_LCTRL},    {ImGuiKey_LeftShift, SDL_SCANCODE_LSHIFT},
+      {ImGuiKey_LeftAlt, SDL_SCANCODE_LALT},      {ImGuiKey_RightCtrl, SDL_SCANCODE_RCTRL},
+      {ImGuiKey_RightShift, SDL_SCANCODE_RSHIFT}, {ImGuiKey_RightAlt, SDL_SCANCODE_RALT},
+      {ImGuiKey_Apostrophe, SDL_SCANCODE_APOSTROPHE}, {ImGuiKey_Comma, SDL_SCANCODE_COMMA},
+      {ImGuiKey_Minus, SDL_SCANCODE_MINUS},       {ImGuiKey_Period, SDL_SCANCODE_PERIOD},
+      {ImGuiKey_Slash, SDL_SCANCODE_SLASH},       {ImGuiKey_Semicolon, SDL_SCANCODE_SEMICOLON},
+      {ImGuiKey_Equal, SDL_SCANCODE_EQUALS},      {ImGuiKey_LeftBracket, SDL_SCANCODE_LEFTBRACKET},
+      {ImGuiKey_Backslash, SDL_SCANCODE_BACKSLASH}, {ImGuiKey_RightBracket, SDL_SCANCODE_RIGHTBRACKET},
+      {ImGuiKey_GraveAccent, SDL_SCANCODE_GRAVE}, {ImGuiKey_KeypadDecimal, SDL_SCANCODE_KP_PERIOD},
+      {ImGuiKey_KeypadDivide, SDL_SCANCODE_KP_DIVIDE}, {ImGuiKey_KeypadMultiply, SDL_SCANCODE_KP_MULTIPLY},
+      {ImGuiKey_KeypadSubtract, SDL_SCANCODE_KP_MINUS}, {ImGuiKey_KeypadAdd, SDL_SCANCODE_KP_PLUS},
+      {ImGuiKey_KeypadEnter, SDL_SCANCODE_KP_ENTER},
+  };
+  SDL_Scancode code = SDL_SCANCODE_UNKNOWN;
+  if (key >= ImGuiKey_A && key <= ImGuiKey_Z) code = SDL_Scancode(SDL_SCANCODE_A + (key - ImGuiKey_A));
+  else if (key >= ImGuiKey_1 && key <= ImGuiKey_9) code = SDL_Scancode(SDL_SCANCODE_1 + (key - ImGuiKey_1));
+  else if (key == ImGuiKey_0) code = SDL_SCANCODE_0;
+  else if (key >= ImGuiKey_F1 && key <= ImGuiKey_F12) code = SDL_Scancode(SDL_SCANCODE_F1 + (key - ImGuiKey_F1));
+  else if (key >= ImGuiKey_Keypad1 && key <= ImGuiKey_Keypad9)
+    code = SDL_Scancode(SDL_SCANCODE_KP_1 + (key - ImGuiKey_Keypad1));
+  else if (key == ImGuiKey_Keypad0) code = SDL_SCANCODE_KP_0;
+  else
+    for (const Pair& p : kPairs)
+      if (p.key == key) code = p.code;
+  if (code == SDL_SCANCODE_UNKNOWN) return {};
+  const char* name = SDL_GetScancodeName(code);
+  return name && *name ? name : std::string();
+}
+
+// Monitors SDL sees, as "N. Name (WxH)".
+std::vector<trg::Option> MonitorOptions() {
+  std::vector<trg::Option> out;
+  const int n = SDL_GetNumVideoDisplays();
+  for (int i = 0; i < n; ++i) {
+    SDL_DisplayMode mode{};
+    const char* name = SDL_GetDisplayName(i);
+    std::string label = std::to_string(i + 1) + ". " + (name && *name ? name : "Display");
+    if (SDL_GetCurrentDisplayMode(i, &mode) == 0)
+      label += " (" + std::to_string(mode.w) + "\xC3\x97" + std::to_string(mode.h) + ")";
+    out.push_back({std::to_string(i), label});
+  }
+  if (out.empty()) out.push_back({"0", "Main display"});
+  return out;
+}
+
+std::string ReadFirstLine(const std::string& path) {
+  std::ifstream in(path);
+  std::string line;
+  std::getline(in, line);
+  while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+  return line;
 }
 
 // --------------------------------------------------------------- header ---
@@ -267,6 +435,59 @@ struct App {
   trg::TextFileSettings settings{dir + "launcher.txt"};
   bool force_ready = false;
   std::string picked;  // a .cue chosen this session, before it is accepted
+  // Controller assignments (input.ini [mapping]) and keyboard keys
+  // (keybinds.ini, every [playerN]) as the Controls page shows them.
+  std::map<std::string, std::string> pad_map, key_map;
+  bool inputs_changed = false;
+  bool expand_sections = false;  // --expand: open the Controls sections (screenshots)
+
+  App() { LoadInputFiles(); }
+
+  void LoadInputFiles() {
+    const TomlEditor input(dir + "input.ini"), keys(dir + "keybinds.ini");
+    for (const PadButton& b : kPadButtons) {
+      const std::string pad = input.Get("mapping", b.key), key = keys.Get("player1", b.key);
+      pad_map[b.key] = input.Exists() ? pad : b.pad;
+      key_map[b.key] = keys.Exists() && !key.empty() ? key : b.keyboard;
+    }
+  }
+
+  void ResetInputs() {
+    for (const PadButton& b : kPadButtons) {
+      pad_map[b.key] = b.pad;
+      key_map[b.key] = b.keyboard;
+    }
+    inputs_changed = true;
+  }
+
+  // input.ini: vibration and the controller map. keybinds.ini: the keys, for
+  // every player slot (the keyboard serves whichever player uses it), the
+  // left-stick directions following the arrow keys.
+  bool SaveInputFiles() const {
+    if (!std::ifstream(dir + "input.ini")) {
+      std::ofstream(dir + "input.ini", std::ios::binary) << kDefaultInputIni;
+    }
+    TomlEditor input(dir + "input.ini");
+    input.Set("controller", "vibration", std::to_string(std::clamp(settings.GetInt("vibration", 100), 0, 100)));
+    for (int i = 0; i < kRemappableOnController; ++i) {
+      const auto it = pad_map.find(kPadButtons[i].key);
+      if (it != pad_map.end()) input.Set("mapping", kPadButtons[i].key, it->second);
+    }
+    bool ok = input.Save();
+    if (!inputs_changed && !std::ifstream(dir + "keybinds.ini")) return ok;
+    TomlEditor keys(dir + "keybinds.ini");
+    std::vector<std::string> slots = keys.SectionsStartingWith("player");
+    if (slots.empty()) slots = {"player1", "player2"};
+    for (const std::string& slot : slots)
+      for (const PadButton& b : kPadButtons) {
+        const std::string key = key_map.at(b.key);
+        keys.Set(slot, b.key, key);
+        const std::string dir_key = std::string(b.key);
+        if (dir_key == "up" || dir_key == "down" || dir_key == "left" || dir_key == "right")
+          keys.Set(slot, "ls_" + dir_key, key);
+      }
+    return keys.Save() && ok;
+  }
 
   DiscCheck Disc() const { return CheckDisc(settings.Get("disc")); }
   bool Ready() const { return force_ready || Disc().ok; }
@@ -313,9 +534,14 @@ struct App {
     ui.Combo("Window size", "The size of the window in windowed mode.", "window_width", "1920",
              {{"1280", "1280 \xC3\x97 720"}, {"1600", "1600 \xC3\x97 900"}, {"1920", "1920 \xC3\x97 1080"},
               {"2560", "2560 \xC3\x97 1440"}, {"3840", "3840 \xC3\x97 2160"}});
+    ui.Combo("Monitor", "The screen the game opens on.", "monitor", "0", MonitorOptions());
     ui.Toggle("Widescreen", "16:9 in matches: the arena and crowd fill the sides. Menus and loading screens keep "
               "the original 4:3 picture.",
               "widescreen", true);
+    ui.Toggle("Fill the screen",
+              "Off keeps the picture's shape, with black bars on screens that are not 16:9 (or 4:3 in menus). On "
+              "stretches it to fill the whole screen.",
+              "stretch", false);
     ui.Choice("VSync", "Waits for the display before showing a frame, which stops tearing.", "vsync", "on",
               {{"off", "Off"}, {"on", "On"}, {"adaptive", "Adaptive"}});
   }
@@ -324,9 +550,9 @@ struct App {
     ui.Combo("Render resolution",
              "The game is drawn at this resolution, then scaled to the window. Above your screen's resolution it "
              "smooths every edge (supersampling).",
-             "internal_resolution", "4k",
-             {{"native", "Original (240p)"}, {"720p", "720p"}, {"1080p", "1080p"}, {"1440p", "1440p"},
-              {"4k", "4K (recommended)"}, {"5k", "5K"}, {"8k", "8K"}, {"display", "Match my screen"}});
+             "internal_resolution", "display",
+             {{"display", "Match my screen (recommended)"}, {"native", "Original (240p)"}, {"720p", "720p"},
+              {"1080p", "1080p"}, {"1440p", "1440p"}, {"4k", "4K"}, {"5k", "5K"}, {"8k", "8K"}});
     ui.Toggle("Smooth outlines", "Anti-aliasing for the characters' black outlines and every other edge (FXAA after "
               "the supersampled image is scaled down).",
               "smooth_outlines", true);
@@ -336,6 +562,10 @@ struct App {
               "geometry_correction", true);
     ui.SliderInt("Sharpening", "Contrast-adaptive sharpening of the final picture.", "sharpen", 0, 0, 100, "%d%%", 5);
     ui.SliderInt("Brightness", "100% is the original picture.", "brightness", 100, 50, 150, "%d%%", 5);
+    ui.Choice("Screen filter", "Makes the picture look like it is on an old TV.", "screen_filter", "off",
+              {{"off", "Off"}, {"crt", "CRT"}, {"composite", "Composite"}, {"trinitron", "Trinitron"}});
+    ui.SliderInt("Scanlines", "Dark lines between the picture's rows, like a CRT. 0% is off.", "scanlines", 0, 0, 100,
+                 "%d%%", 5);
   }
 
   static void PageGameplay(trg::Ui& ui) {
@@ -351,11 +581,15 @@ struct App {
     ui.Toggle("Unlock everything",
               "All wrestlers, the Defender and Champion circuits and Bonus Match Up, from the start.", "unlock_all",
               true);
+    ui.Toggle("Fast loading",
+              "Loading screens run up to four times faster. The game itself is untouched: everything happens in the "
+              "same order, just sooner.",
+              "fast_loading", true);
     ui.Toggle("Frame rate counter", "Shows the game and display frame rates in the window title.", "fps_counter",
               false, "Hidden", "Shown");
   }
 
-  static void PageControls(trg::Ui& ui) {
+  void PageControls(trg::Ui& ui) {
     ui.Choice("Player 1", "Automatic uses a controller when one is connected when you press Play, otherwise the keyboard.",
               "p1_input", "auto", {{"auto", "Automatic"}, {"controller", "Controller"}, {"keyboard", "Keyboard"}});
     ui.Choice("Player 2",
@@ -367,8 +601,66 @@ struct App {
     for (size_t i = 0; i < pads.size(); ++i) list += (i ? "\n" : "") + std::to_string(i + 1) + ". " + pads[i];
     ui.Info("Connected controllers", pads.empty() ? "None found. Plug one in; it is picked up when you press Play."
                                                   : list.c_str());
-    ui.Info("Keyboard", "Arrows move, X Cross, S Circle, Z Square, A Triangle, Enter Start, Right Shift Select, "
-                        "Q W E R for L1 R1 L2 R2. Change them in keybinds.ini in the game folder.");
+    ui.SliderInt("Vibration", "Controller rumble strength; 0% switches it off. The game starts with its own Vibration option off: turn it on in the game's Options menu.", "vibration", 100, 0,
+                 100, "%d%%", 10);
+    ui.SliderInt("Stick deadzone", "How far a stick must move before it counts. Raise it if a worn stick drifts.",
+                 "deadzone", 10, 0, 50, "%d%%", 1);
+    ui.EndRows();
+
+    if (ui.Section("Controller buttons", expand_sections)) {
+      ui.Help("Which controller button presses each PlayStation button. The d-pad and left stick always move.");
+      for (int i = 0; i < kRemappableOnController; ++i) {
+        const PadButton& b = kPadButtons[i];
+        ui.Row(b.label);
+        std::string& current = pad_map[b.key];
+        ImGui::PushID(b.key);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::BeginCombo("##pad", PadInputLabel(current), ImGuiComboFlags_HeightLarge)) {
+          for (const PadInput& in : kPadInputs)
+            if (ImGui::Selectable(in.label, current == in.name)) {
+              current = in.name;
+              inputs_changed = true;
+            }
+          ImGui::EndCombo();
+        }
+        ImGui::PopID();
+      }
+      if (ui.ButtonRow("Defaults", "Put every controller button back.", "Reset controller buttons")) {
+        for (const PadButton& b : kPadButtons) pad_map[b.key] = b.pad;
+        inputs_changed = true;
+      }
+      ui.EndRows();
+    }
+    if (ui.Section("Keyboard keys", expand_sections)) {
+      ui.Help("Click a key, then press the new one (Esc cancels). Used by whichever player is on the keyboard.");
+      for (const PadButton& b : kPadButtons) {
+        if (const std::optional<ImGuiKey> pressed = ui.KeyBindRow(b.label, nullptr, key_map[b.key])) {
+          const std::string name = KeyNameForImGuiKey(*pressed);
+          if (name.empty()) {
+            ui.SetStatus("That key cannot be used for the game.", 4);
+          } else {
+            key_map[b.key] = name;
+            inputs_changed = true;
+          }
+        }
+      }
+      if (ui.ButtonRow("Defaults", "Put every keyboard key back.", "Reset keyboard keys")) {
+        for (const PadButton& b : kPadButtons) key_map[b.key] = b.keyboard;
+        inputs_changed = true;
+      }
+      ui.EndRows();
+    }
+  }
+
+  static void PageSound(trg::Ui& ui) {
+    ui.SliderInt("Volume", "The game's overall volume. The numpad + and - keys change it while you play.", "volume",
+                 100, 0, 100, "%d%%", 5);
+    ui.Choice("Sound delay",
+              "How much sound is buffered ahead. Low makes hits and music line up best with the picture; Safe "
+              "rides out stutters on slow or busy PCs without crackling.",
+              "audio_latency", "low", {{"low", "Low"}, {"normal", "Normal"}, {"safe", "Safe"}});
+    ui.Toggle("High-quality audio", "Smoother resampling of the PlayStation's sound chip, for a little more CPU.",
+              "spu_hq", false);
   }
 
   // The settings.toml device names for players 1 and 2.
@@ -388,9 +680,12 @@ struct App {
         "psxrecomp. It runs from your own copy of the game: no game data is included.");
     ui.Spacer(4);
     ui.LauncherVisibilityRow();
-    ui.FolderRow("Game folder", "Settings, saves and the game program.", "Open game folder", dir);
+    ui.FolderRow("Save data", "Your memory card files.", "Open save folder", dir + "saves");
+    ui.FolderRow("Game folder", "Settings (launcher.txt, settings.toml, input.ini, keybinds.ini) and the game program.",
+                 "Open game folder", dir);
     ui.ResetAllRow();
-    ui.Info("Version", "1.0.0");
+    const std::string version = ReadFirstLine(dir + "psx_game_version.txt");
+    ui.Info("Version", version.empty() ? "unknown" : version.c_str());
   }
 
   // The runtime's own settings, from the launcher's choices.
@@ -400,7 +695,7 @@ struct App {
     toml.Set("video", "fullscreen", mode == "fullscreen" ? "2" : mode == "borderless" ? "1" : "0");
     toml.Set("video", "window_width", std::to_string(std::clamp(settings.GetInt("window_width", 1920), 640, 7680)));
     toml.Set("video", "vsync", Quote(settings.Get("vsync", "on")));
-    toml.Set("video", "internal_resolution", Quote(settings.Get("internal_resolution", "4k")));
+    toml.Set("video", "internal_resolution", Quote(settings.Get("internal_resolution", "display")));
     const bool smooth = settings.GetBool("smooth_outlines", true);
     toml.Set("video", "antialiasing", smooth ? "true" : "false");
     toml.Set("video", "fxaa", smooth ? "true" : "false");
@@ -411,6 +706,19 @@ struct App {
     toml.Set("video", "sharpen", std::to_string(std::clamp(settings.GetInt("sharpen", 0), 0, 100)));
     toml.Set("video", "brightness", std::to_string(std::clamp(settings.GetInt("brightness", 100), 50, 150)));
     toml.Set("video", "fps_counter", settings.GetBool("fps_counter", false) ? "true" : "false");
+    toml.Set("video", "monitor", std::to_string(std::max(0, settings.GetInt("monitor", 0))));
+    toml.Set("video", "stretch", settings.GetBool("stretch", false) ? "true" : "false");
+    const std::string filter = settings.Get("screen_filter", "off");
+    toml.Set("video", "crt_filter", Quote(filter == "off" ? "raw" : filter));
+    const int scanlines = std::clamp(settings.GetInt("scanlines", 0), 0, 100);
+    toml.Set("video", "scanlines", scanlines > 0 ? "true" : "false");
+    char strength[16];
+    std::snprintf(strength, sizeof strength, "%.2f", scanlines / 100.0);
+    toml.Set("video", "scanline_strength", strength);
+    toml.Set("audio", "volume", std::to_string(std::clamp(settings.GetInt("volume", 100), 0, 100)));
+    const std::string delay = settings.Get("audio_latency", "low");
+    toml.Set("audio", "latency_ms", delay == "safe" ? "180" : delay == "normal" ? "150" : "120");
+    toml.Set("audio", "spu_hq", settings.GetBool("spu_hq", false) ? "true" : "false");
     // Widescreen and the frame rate belong to the game's plugin (launcher.txt);
     // the generic presenter blend stays off so frames are never doubled.
     toml.Set("video", "frame_interpolation", "false");
@@ -419,8 +727,10 @@ struct App {
     const auto [p1, p2] = InputDevices();
     toml.Set("controller", "p1_device", Quote(p1));
     toml.Set("controller", "p2_device", Quote(p2));
+    toml.Set("controller", "deadzone",
+             std::to_string(std::clamp(settings.GetInt("deadzone", 10), 0, 50) * 32767 / 100));
     toml.Set("launcher", "skip_launcher", "true");
-    return toml.Save();
+    return toml.Save() && SaveInputFiles();
   }
 
   // Starts the game and returns at once; the launcher then exits.
@@ -475,6 +785,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--screenshot") && i + 1 < argc) screenshot = argv[++i];
     else if (!std::strcmp(argv[i], "--ready")) app.force_ready = true;
     else if (!std::strcmp(argv[i], "--launcher")) force_launcher = true;
+    else if (!std::strcmp(argv[i], "--expand")) app.expand_sections = true;
   }
 
   const bool show = !screenshot.empty() || trg::ShouldShowLauncher(app.settings, "launcher", app.Ready(), force_launcher);
@@ -500,7 +811,8 @@ int main(int argc, char** argv) {
       {"Display", "Window, widescreen and how the picture reaches your screen.", App::PageDisplay},
       {"Graphics", "HD rendering, smooth outlines and the final picture.", App::PageGraphics},
       {"Gameplay", "Frame rate, the intro and what is unlocked.", App::PageGameplay},
-      {"Controls", "Controllers and the keyboard for players 1 and 2.", App::PageControls},
+      {"Controls", "Controllers and the keyboard for players 1 and 2.", [&](trg::Ui& ui) { app.PageControls(ui); }},
+      {"Sound", "Volume and how closely the sound follows the picture.", App::PageSound},
       {"About", "About this port, and where your settings live.", [&](trg::Ui& ui) { app.PageAbout(ui); }},
   };
   config.start_page = start_page >= 0 ? start_page : app.Ready() ? 1 : 0;
@@ -509,6 +821,36 @@ int main(int argc, char** argv) {
     return trg::PlayCheck{};
   };
   config.on_file_drop = [&](const std::string& path) { app.picked = path; };
+  config.on_save = [&] { return app.SaveInputFiles(); };
+  config.on_reset = [&] {
+    app.ResetInputs();
+    app.SaveInputFiles();
+  };
+  // 120 FPS is experimental: say what to expect and recommend 60, but let the
+  // player go ahead.
+  config.before_play = [&]() -> std::optional<trg::PlayPrompt> {
+    if (app.settings.Get("frame_rate", "60") != "120") return std::nullopt;
+    trg::PlayPrompt prompt;
+    prompt.title = "120 FPS is experimental";
+    prompt.paragraphs = {
+        "You may see graphical issues at 120 FPS: the ring spotlight can flicker, and motion may not look "
+        "perfectly even.",
+        "It needs a lot of CPU. On most PCs only some frames get an extra in-between frame, and at high render "
+        "resolutions it mostly falls back to 60 FPS on its own.",
+        "60 FPS is recommended."};
+    prompt.footnote = "You can change the frame rate any time on the Gameplay page.";
+    trg::PromptButton sixty;
+    sixty.label = "Play at 60 FPS (recommended)";
+    sixty.accent = true;
+    sixty.action = [&] {
+      app.settings.Set("frame_rate", "60");
+      app.settings.Save();
+    };
+    trg::PromptButton anyway;
+    anyway.label = "Play at 120 FPS";
+    prompt.buttons = {sixty, anyway};
+    return prompt;
+  };
 
   trg::Launcher launcher(std::move(config));
   const std::vector<uint32_t> icon = DonutIcon(128);

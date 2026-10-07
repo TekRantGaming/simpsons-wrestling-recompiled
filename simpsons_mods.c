@@ -10,6 +10,7 @@
  *                          120 = 60 FPS game frames plus an in-between frame each
  *   skip_intro = on        EA / Big Ape logos and the intro movie are skipped
  *   unlock_all = on        all wrestlers, both circuits and Bonus Match Up
+ *   fast_loading = on      loads run up to 4x faster (host pacing only)
  *
  * The game itself is untouched: the unlocks are the RAM flags the game keeps
  * for its own progression (the NTSC-U values the CodeBreaker codes set), written
@@ -37,6 +38,7 @@ static char s_widescreen[16] = "on";
 static char s_frame_rate[16] = "60";
 static char s_skip_intro[16] = "on";
 static char s_unlock_all[16] = "on";
+static char s_fast_loading[16] = "on";
 static int s_loaded;
 
 static void exe_dir(char* out, size_t size) {
@@ -90,6 +92,7 @@ static void load_settings(void) {
         else if (!strcmp(key, "frame_rate")) dst = s_frame_rate;
         else if (!strcmp(key, "skip_intro")) dst = s_skip_intro;
         else if (!strcmp(key, "unlock_all")) dst = s_unlock_all;
+        else if (!strcmp(key, "fast_loading")) dst = s_fast_loading;
         if (dst && *value) {
             strncpy(dst, value, 15);
             dst[15] = '\0';
@@ -679,12 +682,46 @@ static void simpsons_pc_activate(void) {
         }
     }
     if (is_on(s_skip_intro)) (void)psx_mod_set_auto_skip_fmv(1);
+    /* Fast loading starts off; simpsons_fast_loading_vblank switches it on
+     * only while a load holds the game up. */
+}
+
+/* Fast loading. The framework's host-pacing accelerator feeds wall-clock time
+ * faster while it detects sustained CD data reads; every guest frame, CD
+ * interrupt and callback still happens on schedule, so the game cannot tell.
+ * But this game reads the disc all the time (menus and matches stream from
+ * it), so left on its own the accelerator ran whole matches at 1.1-1.5x
+ * speed with the sound muted. Here it is armed (4x, the built-in mod's
+ * default) only while the game's main loop is held up: its frame counter
+ * (0x800730D0) has not moved for kLoadStallVBlanks. That is a real loading
+ * screen; the moment the game draws a frame again, pacing is authentic. */
+#define kLoadStallVBlanks 6u
+
+static void simpsons_fast_loading_vblank(void) {
+    static uint32_t last_frames = 0, still = 0, armed = 0;
+    if (!is_on(s_fast_loading)) {
+        if (armed) { (void)psx_mod_set_load_acceleration(1u, 0u); armed = 0; }
+        return;
+    }
+    const uint32_t frames = psx_mod_read_word(kGameFrameCounter);
+    if (frames != last_frames) {
+        last_frames = frames;
+        still = 0;
+    } else if (still < kLoadStallVBlanks) {
+        ++still;
+    }
+    const uint32_t want = still >= kLoadStallVBlanks;
+    if (want != armed) {
+        (void)psx_mod_set_load_acceleration(want ? 4u : 1u, 0u);
+        armed = want;
+    }
 }
 
 static void simpsons_pc_vblank(void) {
     load_settings();
     if (is_on(s_unlock_all)) simpsons_unlock_vblank();
     simpsons_frame_rate_vblank();
+    simpsons_fast_loading_vblank();
 }
 
 PSX_MOD_CONSTRUCTOR(simpsons_register_mod_plugins) {

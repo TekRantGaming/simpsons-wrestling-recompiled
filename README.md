@@ -1,203 +1,146 @@
-# The Simpsons Wrestling Recompiled
+<div align="center">
 
-The Simpsons Wrestling (PlayStation, USA, SLUS-01227) recompiled into a native
-Windows and Linux program with [psxrecomp](https://github.com/mstan/psxrecomp),
-started from the shared [TRG Launcher](https://github.com/TekRantGaming/trg-launcher).
+<img src="docs/images/banner.jpg" alt="The Simpsons Wrestling Recompiled" width="100%">
 
-No game data is included. You need your own copy of the game as a `.cue`/`.bin`
-disc image of the USA release.
+<br>
 
-## Features
+![Version](https://img.shields.io/badge/version-1.0.0--rc1-f2c94c?style=for-the-badge&labelColor=1a2b4c)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-2f80ed?style=for-the-badge&labelColor=1a2b4c)
 
-| Feature | What it does |
+### The Simpsons Wrestling on PC, running natively. Widescreen, HD, 60 FPS, everything unlocked.
+
+<sub>The original PlayStation game code, translated to native PC code with <a href="https://github.com/mstan/psxrecomp">psxrecomp</a>. <b>No game files included</b>: bring your own disc image of The Simpsons Wrestling (PlayStation, North America, SLUS-01227).</sub>
+
+</div>
+
+<br>
+
+## Highlights
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**16:9 widescreen**<br>
+Matches fill a modern screen with real extra picture: more of the arena and the crowd at the sides, and the health bars and portraits out at the screen edges.
+
+</td>
+<td width="33%" valign="top">
+
+**HD and smooth**<br>
+Drawn at up to 8K and scaled to your screen, with smooth outlines and none of the PlayStation's wobbling polygons.
+
+</td>
+<td width="33%" valign="top">
+
+**60 FPS at the real game speed**<br>
+Matches run at a smooth 60 frames a second (the original manages 20-30), and Homer still moves exactly as fast as he did in 2001.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Straight to the action**<br>
+The intro movies are skipped and every wrestler, both circuits and Bonus Match Up are unlocked from the start. Both can be switched back off.
+
+</td>
+<td valign="top">
+
+**Your controls**<br>
+Xbox, PlayStation and other controllers work out of the box, with vibration. Two players can play, on two controllers or a controller and the keyboard. Remap any button.
+
+</td>
+<td valign="top">
+
+**Native, not emulated**<br>
+Every function of the game was translated from PlayStation code to C and compiled for your PC. Your CPU runs the game directly.
+
+</td>
+</tr>
+</table>
+
+## In game
+
+<div align="center">
+<img src="docs/images/match.jpg" alt="A match in 16:9" width="100%">
+</div>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/title.jpg" alt="The title screen"></td>
+<td width="50%"><img src="docs/images/match-2.jpg" alt="Another arena"></td>
+</tr>
+</table>
+
+## Getting started
+
+1. Download the release for your system and unzip it anywhere.
+2. Run **`SimpsonsWrestling.exe`** (Linux: `./SimpsonsWrestling`). This opens the launcher.
+3. On the **Game** page, choose the `.cue` file of your disc image, or drop it onto the window. The launcher checks that it is the USA disc. The `.bin` file must sit next to the `.cue`.
+4. Press **PLAY**.
+
+Plug your controller in before pressing PLAY: with **Automatic** (the default) player 1 gets the first controller, or the keyboard when there is none, and player 2 gets the second.
+
+<sub>Windows may warn that the program is from an unknown publisher (it is not code-signed). Choose **More info**, then **Run anyway**.</sub>
+
+## The launcher
+
+<div align="center">
+<img src="docs/images/launcher.jpg" alt="The launcher" width="85%">
+</div>
+
+| Page | What you can set |
 | --- | --- |
-| **16:9 widescreen** | Matches render wider than 4:3 with real extra picture: the arena and crowd fill the sides, nothing is culled at the new edges, and the HUD (portraits, health and power bars, TAUNT, win trophies) sits at the screen edges. Menus, the title screen, character select and loading screens keep the original 4:3 picture. |
-| **HD rendering with smooth outlines** | The game is drawn at up to 8K and scaled down to your window (supersampling), then FXAA, so the characters' black outlines and every other edge are smooth. Stable geometry removes the PlayStation's polygon wobble. |
-| **Higher frame rate at normal game speed** | Matches run at up to a real 60 FPS (the original runs at 20-30). The game already scales its movement by the time each frame took, so it plays at exactly the original speed. If your PC cannot draw 60 FPS, the frame rate drops instead of the game slowing down. |
-| **Intro skipped** | Boots straight to the title screen: no copyright card, Fox Interactive or Big Ape logo movies. |
-| **Everything unlocked** | All wrestlers (Bumblebee Man, Moe, Frink, Flanders...), the Defender and Champion circuits, and Bonus Match Up. |
+| **Game** | Your disc image |
+| **Display** | Windowed, borderless or exclusive fullscreen, window size, which monitor, widescreen, fill the screen, VSync |
+| **Graphics** | Render resolution (240p to 8K, or matching your screen), smooth outlines, smooth textures, stable geometry, sharpening, brightness, CRT screen filter and scanlines |
+| **Gameplay** | Frame rate (30 original, 60, or 120 experimental), skip intro, unlock everything, fast loading, frame-rate counter |
+| **Controls** | Player 1 and 2 input, vibration strength, stick deadzone, controller button remapping, keyboard keys |
+| **Sound** | Volume, sound delay, high-quality audio |
+| **About** | Show the launcher at startup or not, open the save or game folder, reset all settings, version |
 
-Every feature can be switched off in the launcher.
+To skip the launcher, set **Show this launcher** to Off on the About page. Hold **Shift** while starting the game to bring it back.
 
-## Playing
+## Controls
 
-1. Unzip the release and run `SimpsonsWrestling.exe` (Linux: `./SimpsonsWrestling`).
-2. On the **Game** page, choose the `.cue` file of your disc (or drop it on the
-   window). The launcher checks that it is the USA disc.
-3. Press **PLAY**.
+| PlayStation | Controller (Xbox layout) | Keyboard |
+| --- | --- | --- |
+| D-pad / left stick | D-pad / left stick | Arrow keys |
+| Cross | A | X |
+| Circle | B | S |
+| Square | X | Z |
+| Triangle | Y | A |
+| L1 / R1 | LB / RB | Q / W |
+| L2 / R2 | LT / RT | E / R |
+| Start | Menu | Enter |
+| Select | View | Right Shift |
 
-Controllers work out of the box: with **Automatic** (the default) player 1 gets
-the first connected controller when you press PLAY, or the keyboard if none is
-connected, and player 2 gets a second controller (or the keyboard). Connect your
-controller before pressing PLAY.
+Change any of them on the launcher's **Controls** page. While playing: **Alt+Enter** switches fullscreen, and the numpad **+** and **-** keys change the volume.
 
-The launcher's settings are kept in `launcher.txt`, the renderer's in
-`settings.toml`, and memory-card saves in `saves/`, all next to the program.
-Hold **Shift** while starting it to show the launcher if you have hidden it.
+## Good to know
 
-## Launcher pages
-
-| Page | Settings |
-| --- | --- |
-| Game | Your disc image, checked against the USA disc's size |
-| Display | Window mode (windowed, borderless, exclusive), window size, widescreen, VSync |
-| Graphics | Render resolution (240p to 8K, or your screen's), smooth outlines, smooth textures, stable geometry, sharpening, brightness |
-| Gameplay | Frame rate (30 or 60), skip intro, unlock everything, frame-rate counter |
-| Controls | Player 1 and 2 input (automatic, controller, keyboard), connected controllers, keyboard keys |
-| About | Show the launcher at startup, open the game folder, reset all settings |
-
-## How the features work
-
-All game-specific code is in [`simpsons_mods.c`](simpsons_mods.c), a trusted
-psxrecomp plugin (package `mods/preloaded/packages/simpsons.pc`). It never
-patches the game's code; it reads the game's own state and the launcher's
-switches.
-
-- **Match detection.** The mode byte at `0x8007398C` is 0 in a match (and
-  during boot), and `0x800732E4` is set once the match's wrestlers exist. Both
-  together gate widescreen and the frame rate.
-- **Widescreen** uses psxrecomp's native-wide renderer
-  (`psx_mod_set_fixed_display_aspect(16, 9)`) with a world-scene predicate, so
-  only matches go wide.
-- **Edge culling.** The arena is drawn cell by cell (`0x80054714`): each cell's
-  centre is projected and the cell skipped unless `-100 <= SX < 612`, a 100 px
-  margin around the 512-wide screen. In 16:9 that left 15 px, so crowd blocks,
-  floor and props vanished while still on screen. `game.toml
-  [widescreen.cull]` widens both immediates (`0x8005496C`, `0x80054974`) by the
-  live reveal plus a 64 px guard; at 4:3 they are unchanged.
-- **HUD at the edges.** The game links its HUD into the last slots of each
-  frame's ordering table: slot 2038 holds both players' panels, slot 2047 the
-  TAUNT labels (y 166) and win trophies (y 20) along with centred text. At
-  DrawOTag (`0x8005E0CC`) the plugin tags those packets left or right
-  (`psx_mod_tag_hud_primitive`); centred text such as the round banner and
-  DEMO stays put. The bar outlines are polylines, so this port also taught
-  psxrecomp's renderer to move tagged polylines (they were never shifted).
-- **60 FPS.** The main loop (`0x80044F1C`) counts the VBlanks since the last
-  frame (`0x80044F80`) and moves everything by a step from a linear table
-  (`0x8006ECFC`, 68 per VBlank). A match runs at 20-30 FPS only because a frame
-  costs more than one VBlank of R3000A time. During matches the plugin
-  overclocks the emulated CPU up to 400% (`psx_mod_set_cpu_overclock`, added
-  to the framework for this port), so every frame takes one VBlank: the
-  game's own timestep stays 1 and its speed is unchanged. Boot, menus and
-  loading keep stock CPU timing.
-- **Fighter movement at 60 FPS.** Gravity, pushes and drag change a fighter's
-  velocities per unit of time (`accel * step >> 12`, step at `obj+0x14C`),
-  but the position update (`0x8002E09C`) adds `(vA + vB) * 3/4` once per game
-  frame. Tuned at 20-30 FPS, every velocity-driven move went about 2.5 times
-  as far at 60 FPS: a jump rose ~20,900 units instead of ~8,400-9,400 and left
-  the arena, and walking was about twice as fast. Instruction hooks
-  (`mod_instruction_sites`) scale the velocity by `step / 170` (an average
-  stock frame of 2.5 VBlanks) just before the 3/4, so distance follows time.
-  Only with the 60/120 FPS option; "30 FPS (original)" is untouched.
-- **120 FPS (experimental).** Game logic stays at 60 FPS; each frame gets one
-  in-between image that the game draws itself, using psxrecomp's render passes
-  (`docs/RENDER_PASSES.md`). At the start of frame N+1 (the task update,
-  `0x8005457C`) a pass runs every task again with half the step, so the game
-  works out where everything is halfway to N+1, then draws that ordering
-  table into frame N's display rect with the draw environment frame N used.
-  Guest time is frozen and the machine is restored afterwards, so the real
-  frame runs as if nothing happened. A pass costs about as much as a game
-  frame (6 ms at native resolution, much more at 4K), so passes run only while
-  the game holds 60 FPS, the runtime sheds them when the PC has no time left,
-  and the governor pauses them (with a growing wait) the moment the game falls
-  behind, before it would ever lower the overclock.
-- **Frame-rate governor.** Drawing twice the frames costs the PC twice the
-  renderer time. Every quarter second the plugin compares game time with real
-  time; if the game falls behind it lowers the overclock (the frame rate drops
-  toward the original 20-30), and it raises it again when there is headroom.
-  It ignores the first second of a match and any single slow quarter second
-  (the arena loading, a host hiccup), so a hitch does not cost seconds of
-  lower FPS. `SIMPSONS_GOVERNOR_LOG=<file>` logs the level, game FPS and speed
-  every 2 s.
-- **Fast wait for the frame flip.** After drawing a frame the game spins in
-  `0x800471E0` until the VBlank handler flips the display. Overclocked, most
-  of each frame went on emulating that loop. A function filter instead moves
-  guest time straight to each next device event and runs the loop's own
-  interrupt check until the flag clears, so the extra CPU speed costs the PC
-  almost nothing when the game has finished its frame early.
-- **Skip intro.** Entry hooks (`game.toml` `mod_function_entry_funcs`) end the
-  copyright card's 5-second loop in the boot routine (`0x8001D0F8`) and return
-  straight from PlayMovie (`0x80044628`) for the two logo movies. The memory
-  card check stays, because it loads your save.
-- **Unlocks.** Each VBlank the plugin sets the circuit and Bonus Match Up flags
-  (`0x80072BF0`, `0x80072BF2`, `0x80072BD0`) and clears the five hidden
-  wrestlers' lock words (`0x8006DCE4`..`0x8006DCF4`, 0 = unlocked, as the game
-  itself writes at `0x80024F24`).
-
-## Tested
-
-On the developer's Windows PC (Ryzen 7 7800X3D, RTX 4070 Ti, 4K 120 Hz panel;
-release build, 4K render, smooth outlines, stable geometry, widescreen, VSync
-on), attract-demo matches in two arenas ran at 1.00x speed and a steady 60
-game FPS at the 400% overclock (stock: 20-26 FPS). Emulating a match took
-about 0.4 s of CPU per second of play, against 0.5 s before the PGO/LTO build
-and the fast flip wait (fixed 300% overclock, VSync off). With the movement
-fix, a standing jump at 60 FPS rises 8,350-8,640 units in 45-47 VBlanks (stock:
-7,000-9,450 in about 44, depending on its frame mix) and walking covers
-215-234 units per VBlank (stock 204-235). 120 FPS mode added an in-between
-frame to 20-65% of frames at native internal resolution with the game at a
-steady 60 FPS; at 4K the passes cost more than a frame has to spare, so they
-mostly stay paused and the game plays at 60 FPS. Linux was checked under WSL2: the launcher starts the
-game, it reaches the title and plays the attract-demo match in 16:9. WSL's
-OpenGL translation is too slow to judge Linux performance, which still needs a
-test on a native Linux install.
+- **Saves** are memory card files in the `saves` folder next to the game (About > Open save folder). Copy that folder to keep your progress.
+- **Vibration:** the game's own Options menu starts with Vibration off. Turn it on there; the launcher's Controls page sets the strength.
+- **Settings** live next to the game: `launcher.txt` (the launcher), `settings.toml` (picture and sound), `input.ini` (controller) and `keybinds.ini` (keyboard).
+- **Performance:** if a match runs below full speed, lower the render resolution on the Graphics page. The game keeps its normal speed either way; when the PC is busy the frame rate drops first.
+- **120 FPS** is experimental. It needs a 120 Hz screen and a fast CPU, works best at low render resolutions, and you may see some flicker (the launcher explains when you choose it). 60 FPS is recommended.
 
 ## Known issues
 
-- Pausing a match in widescreen puts the TAUNT labels back at their 4:3
-  positions and darkens only the 4:3 area until you unpause
-  ([#1](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/issues/1)).
-- 120 FPS (experimental): the ring spotlight is missing from the in-between
-  frames, so it flickers; and on most PCs only some frames get an in-between
-  image, so motion is not yet an even 120.
-- 60 FPS: projectiles and special moves use their own movement code and have
-  not been measured against 30 FPS yet.
+- Pausing a match in widescreen puts the TAUNT labels back at their 4:3 positions and darkens only the middle 4:3 area until you unpause.
+- 120 FPS (experimental): the ring spotlight can flicker, and on most PCs only some frames get an in-between image, so motion is not perfectly even.
+- Linux builds have not yet been tested on a native Linux install.
 
-## Building
+Found something else? Please open an issue with what happened, where, and your launcher settings.
 
-The repository holds the recompiled game C in `generated/`. Regenerate it only
-after changing `game.toml`'s recompiler settings or the seeds:
+## For developers
 
-```bash
-python3 psxrecomp/psxrecomp_cli.py generate --config game.toml --project-root . --disc "path/to/Simpsons Wrestling, The (USA).cue"
-```
-
-**Windows** (Visual Studio 2022 Build Tools, CMake, Ninja; the runtime is
-built with the bundled clang-cl):
-
-```bat
-build.bat
-build-launcher.bat
-powershell -File packaging\package_windows.ps1
-```
-
-`build.bat` compiles with ThinLTO and profile-guided optimisation from
-`pgo/windows.profdata` (about 25% less CPU per frame than a plain release
-build). After large changes to the game C or the runtime, retrain that profile
-with `build-pgo.bat "path\to\Simpsons Wrestling, The (USA).cue"`: it builds an
-instrumented game, plays the attract demo for four minutes and rewrites the
-profile.
-
-**Linux** (cmake, ninja, gcc, and the X11, Wayland, GL, ALSA, PulseAudio and
-udev development packages; on Ubuntu: `libx11-dev libxext-dev libgl-dev
-libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev libxrandr-dev
-libxcursor-dev libxi-dev libxss-dev libudev-dev libgtk-3-dev zlib1g-dev`):
-
-```bash
-./build_linux.sh
-./packaging/package_linux.sh
-```
-
-The launcher and the game are two programs because the psxrecomp runtime uses
-SDL3 and the TRG Launcher's standalone window uses SDL2. The launcher writes
-the settings and starts `SimpsonsWrestling_Recompiled` with `--no-launcher
---disc <your cue>`.
+How the port works, measurements and build instructions: [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
 ## Credits
 
 - [psxrecomp](https://github.com/mstan/psxrecomp) and its contributors
-- Cheat-code research for the NTSC-U unlock flags: the CodeBreaker code lists
-  at almarsguides.com
-- The Simpsons Wrestling © 2001 Twentieth Century Fox Film Corporation;
-  developed by Big Ape Productions, published by Fox Interactive / Activision.
-  This project is not affiliated with them and includes none of their data.
+- The [TRG Launcher](https://github.com/TekRantGaming/trg-launcher)
+- Cheat-code research for the NTSC-U unlock flags: the CodeBreaker code lists at almarsguides.com
+- The Simpsons Wrestling is a trademark of its respective owners. This project contains no game data and is not affiliated with them.
