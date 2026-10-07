@@ -7,10 +7,12 @@
 /out/
 /.happypath/
 
-# generated/ is COMMITTED: releases ship the compiled game, and CI builds it
-# from the game C in this repo (psxrecomp_cli.py generate, then git add
-# generated). Never ignore it. Only the framework submodule's own generated/
-# (BIOS backends) stays untracked, and that is the submodule's rule.
+# generated/ is the game's own code, translated to C from the player's disc
+# (psxrecomp_cli.py generate). It stays on the build machine and is never
+# committed: this public repository holds no game code. disc_probe.json
+# records the local disc path.
+/generated/
+/disc_probe.json
 # psxrecomp_cli.py work areas (overlay toolchain download, static overlay
 # shard evidence -- the latter holds bytes read from the disc).
 /.cache/
@@ -85,7 +87,6 @@ starvation_dump.jsonl
 /*.bmp
 /*.png
 !/catalog_identity.json
-!/disc_probe.json
 !/.recomp.json
 
 # Simpsons Wrestling local builds and logs

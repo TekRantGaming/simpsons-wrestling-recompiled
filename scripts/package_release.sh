@@ -2,7 +2,7 @@
 # Thin wrapper around the shared psxrecomp bundled-release packager.
 # Autofilled by tools/new_project_layout/setup_project.{sh,ps1}.
 #
-# Ships the COMPILED game built from this repo's committed generated/ C:
+# Ships the COMPILED game built from the local generated/ C (not committed):
 # executable, runtime data, bundled OpenBIOS, mod catalog, overlay toolchain.
 # No sources, emitters, CLI, generated C, or BIOS dumps.
 #

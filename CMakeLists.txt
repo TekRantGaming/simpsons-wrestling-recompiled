@@ -14,8 +14,8 @@ project(SimpsonsWrestlingRecomp LANGUAGES C CXX)
 # --- Opt-in product surfaces (OFF by default in the framework) -------------
 # Scaffold prompts / flags fill these. Without recomp-ui, PSX_RECOMP_UI is OFF.
 # The wizard (WIZARD_CMAKE_BLOCK / ENABLE_SETUP_WIZARD) is the first-run disc
-# picker; releases are compiled from the committed generated/ C, so it never
-# needs to generate or rebuild anything on a player's machine.
+# picker; releases are compiled from the generated/ C on the build machine, so
+# it never needs to generate or rebuild anything on a player's machine.
 set(PSX_RECOMP_UI OFF CACHE BOOL
     "No recomp-ui submodule in this scaffold" FORCE)
 # Full netplay UI — enable after adding recomp-ui + testing:
@@ -46,9 +46,9 @@ psxrecomp_add_game_runtime(psx-runtime
     MAX_PLAYERS 2
     # LAUNCHER_BOXART "${CMAKE_CURRENT_SOURCE_DIR}/launcher_assets/img/boxart.tga"
     APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/simpsons.ico"
-    # Committed game C (psxrecomp_cli.py generate; git add generated). Release
-    # CI configures with -DPSXRECOMP_REQUIRE_GAME_C=ON so a checkout without
-    # it fails instead of building a setup host.
+    # Game C from psxrecomp_cli.py generate (local only: generated/ is not
+    # committed). Configure with -DPSXRECOMP_REQUIRE_GAME_C=ON so a checkout
+    # without it fails instead of building a setup host.
     GEN_MARKER "generated/SLUS_012.27_dispatch.c"
     GEN_FULL_GLOB "generated/SLUS_012.27_full_*.c"
     # CODEGEN_SETUP_SOURCES — add with recomp-ui / wizard later

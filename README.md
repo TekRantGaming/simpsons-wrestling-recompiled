@@ -263,9 +263,10 @@ Found something else? Please open an issue with what happened, where, and your l
 <details>
 <summary><b>Building it yourself (for developers)</b></summary>
 
-You need your own disc image: the build translates the game's code from it.
+You need your own disc image: the build translates the game's code from it. The repository holds no game code; `generated/` is created on your machine and ignored by git.
 
 ```bat
+python psxrecomp\psxrecomp_cli.py generate --config game.toml --project-root . --disc "path\to\Simpsons Wrestling, The (USA).cue"
 build.bat                 :: the game (clang-cl, ThinLTO, PGO)
 build-launcher.bat        :: the launcher
 powershell -File packaging\package_windows.ps1   :: optional: the release zip in dist\

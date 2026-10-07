@@ -126,8 +126,9 @@ test on a native Linux install.
 
 ## Building
 
-The repository holds the recompiled game C in `generated/`. Regenerate it only
-after changing `game.toml`'s recompiler settings or the seeds:
+The game's own code is not in the repository. Translate it from your disc into
+`generated/` first (and again after changing `game.toml`'s recompiler settings
+or the seeds); it stays on your machine and is ignored by git:
 
 ```bash
 python3 psxrecomp/psxrecomp_cli.py generate --config game.toml --project-root . --disc "path/to/Simpsons Wrestling, The (USA).cue"
