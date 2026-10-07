@@ -1,0 +1,4 @@
+[submodule "psxrecomp"]
+	path = psxrecomp
+	url = https://github.com/TekRantGaming/psxrecomp.git
+	branch = pointblank

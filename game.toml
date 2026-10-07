@@ -1,0 +1,54 @@
+# Autofilled by tools/new_project_layout/probe_disc.py from your legal dump.
+# Review before shipping. Runtime quirks / overlay seeds still need hand work.
+
+[game]
+name = "SimpsonsWrestling"
+id = "SLUS-01227"
+players = 2
+exe = "disc/SLUS_012.27"
+disc = "disc/Simpsons Wrestling, The (USA).cue"
+load_address = "0x80010000"
+entry_pc = "0x80058B74"
+text_size = "0x000CE000"
+stack_base = "0x801FFFF0"
+
+# Digests are for data Track 01 (first BINARY FILE / TRACK 01).
+[prepare_disc]
+out_dir = "disc"
+bin_name = "Simpsons Wrestling, The (USA).bin"
+cue_name = "Simpsons Wrestling, The (USA).cue"
+boot_exe = "SLUS_012.27"
+known_sizes = [506830128]
+known_md5 = [
+  "b489a333223817199d5ba9ac09e697e0",
+]
+known_sha1 = [
+  "38602a1b9482670dbbd8ab25aa4a8bb520b5bebe",
+]
+known_crc32 = [
+  "da509886",
+]
+
+[recompiler]
+seeds = "seeds/ghidra_funcs.txt"
+out_dir = "generated"
+strict = true
+
+[runtime]
+window_title = "SimpsonsWrestling Recompiled"
+memcard_dir = "saves"
+overlay_cache = true
+
+[video]
+renderer = "opengl"
+aspect_ratio = "4:3"
+
+[controller]
+default_mode = "digital"
+
+# Online mount gate: digests + track count + optional TOC fingerprint
+# (see docs/NETPLAY.md).
+[netplay]
+require_cue = true
+required_tracks = 1
+required_disc_fp = "06952d1bcedea390642a158b77acef18b37414ece5ca8a7e334c1d53ebc71521"
