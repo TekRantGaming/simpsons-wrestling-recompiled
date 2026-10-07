@@ -6,7 +6,7 @@ name = "SimpsonsWrestling"
 id = "SLUS-01227"
 players = 2
 exe = "disc/SLUS_012.27"
-disc = "disc/Simpsons Wrestling, The (USA).cue"
+disc = "disc/Simpsons Wrestling, The (USA).cue"   # the launcher passes the player's own disc with --disc
 load_address = "0x80010000"
 entry_pc = "0x80058B74"
 text_size = "0x000CE000"
@@ -33,9 +33,15 @@ known_crc32 = [
 seeds = "seeds/ghidra_funcs.txt"
 out_dir = "generated"
 strict = true
+# Trusted mod entry hooks (simpsons_mods.c, package simpsons.pc). Inert unless
+# the plugin registers for them. Changing this list needs a regenerate.
+mod_function_entry_funcs = [
+  "0x80044628",  # PlayMovie(index, flag): Skip Intro returns at once for the logos
+  "0x80044F74",  # frame step getter: Skip Intro ends the copyright card's 5 s loop
+]
 
 [runtime]
-window_title = "SimpsonsWrestling Recompiled"
+window_title = "The Simpsons Wrestling"
 memcard_dir = "saves"
 overlay_cache = true
 

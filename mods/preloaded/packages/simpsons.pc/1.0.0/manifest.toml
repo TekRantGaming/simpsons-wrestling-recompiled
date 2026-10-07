@@ -1,0 +1,22 @@
+format_version = 5
+id = "simpsons.pc"
+version = "1.0.0"
+name = "PC Features"
+author = "TekRantGaming"
+description = "Widescreen, a higher frame rate, intro skip and everything unlocked. Each one is switched on or off in the launcher (launcher.txt)."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SLUS-01227"
+
+[[feature]]
+id = "pc"
+name = "PC Features"
+description = "Enabled by default. The launcher decides which features are used."
+group = "Quality of Life"
+default_enabled = true
+
+[[plugin]]
+feature = "pc"
+id = "simpsons.pc"

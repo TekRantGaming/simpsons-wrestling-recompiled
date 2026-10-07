@@ -45,7 +45,7 @@ psxrecomp_add_game_runtime(psx-runtime
     DEFAULT_GAME_CONFIG_PATH "game.toml"
     MAX_PLAYERS 2
     # LAUNCHER_BOXART "${CMAKE_CURRENT_SOURCE_DIR}/launcher_assets/img/boxart.tga"
-    APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/psxrecomp.ico"
+    APP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/assets/simpsons.ico"
     # Committed game C (psxrecomp_cli.py generate; git add generated). Release
     # CI configures with -DPSXRECOMP_REQUIRE_GAME_C=ON so a checkout without
     # it fails instead of building a setup host.
@@ -53,6 +53,8 @@ psxrecomp_add_game_runtime(psx-runtime
     GEN_FULL_GLOB "generated/SLUS_012.27_full_*.c"
     # CODEGEN_SETUP_SOURCES — add with recomp-ui / wizard later
 )
+# Simpsons Wrestling PC features (mods/preloaded/packages/simpsons.pc).
+target_sources(psx-runtime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/simpsons_mods.c")
 
 # >>> psxrecomp:recomp-net-headers (managed by tools/update_cmake.{sh,ps1})
 # runtime/src/main.cpp includes recomp_net/host_relay.h unconditionally (a

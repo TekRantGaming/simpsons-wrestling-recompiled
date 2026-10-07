@@ -1,104 +1,113 @@
-# SimpsonsWrestling Recompiled
+# The Simpsons Wrestling Recompiled
 
-<!-- retcomm-readme-metrics -->
-[![GitHub downloads (all assets, all releases)](https://img.shields.io/github/downloads/RetroPortingToolKit/SimpsonsWrestlingRecomp/total)](https://github.com/RetroPortingToolKit/SimpsonsWrestlingRecomp/releases)
-[![GitHub downloads (latest release)](https://img.shields.io/github/downloads/RetroPortingToolKit/SimpsonsWrestlingRecomp/latest/total)](https://github.com/RetroPortingToolKit/SimpsonsWrestlingRecomp/releases/latest)
-[![GitHub release](https://img.shields.io/github/v/release/RetroPortingToolKit/SimpsonsWrestlingRecomp)](https://github.com/RetroPortingToolKit/SimpsonsWrestlingRecomp/releases/latest)
-<!-- /retcomm-readme-metrics -->
+The Simpsons Wrestling (PlayStation, USA, SLUS-01227) recompiled into a native
+Windows and Linux program with [psxrecomp](https://github.com/mstan/psxrecomp),
+started from the shared [TRG Launcher](https://github.com/TekRantGaming/trg-launcher).
 
-Static recompilation of **SimpsonsWrestling** built on
-[psxrecomp](https://github.com/mstan/psxrecomp) and
-[recomp-ui](https://github.com/RetroPortingToolKit/recomp-ui).
+No game data is included. You need your own copy of the game as a `.cue`/`.bin`
+disc image of the USA release.
 
-The Simpsons Wrestling, recompiled natively for PC
+## Features
 
-| | |
-|---|---|
-| Players | 2 |
-| Region | USA |
-| Publisher | Electronic Arts |
-| Year | 2001 |
+| Feature | What it does |
+| --- | --- |
+| **16:9 widescreen** | Matches render wider than 4:3 with real extra picture: the arena and crowd fill the sides. Menus, the title screen, character select and loading screens keep the original 4:3 picture. |
+| **HD rendering with smooth outlines** | The game is drawn at up to 8K and scaled down to your window (supersampling), then FXAA, so the characters' black outlines and every other edge are smooth. Stable geometry removes the PlayStation's polygon wobble. |
+| **Higher frame rate at normal game speed** | Matches run at a real 60 FPS (the original runs at 20-30). The game already scales its movement by the time each frame took, so it plays at exactly the original speed. |
+| **Intro skipped** | Boots straight to the title screen: no copyright card, Fox Interactive or Big Ape logo movies. |
+| **Everything unlocked** | All wrestlers (Bumblebee Man, Moe, Frink, Flanders...), the Defender and Champion circuits, and Bonus Match Up. |
 
-Scaffolded with the New Project Layout. See
-`psxrecomp/docs/GAME_PROJECT_SETUP.md` for the full flow.
+Every feature can be switched off in the launcher.
 
-<!-- retcomm-readme-launcher -->
-## Retro Launcher
+## Playing
 
-You can run this title **standalone** (download the release zip, point it at
-your disc, play), or manage installs, updates, and disc/BIOS wiring with
-**[Retro Launcher](https://github.com/RetroPortingToolKit/Retro-Launcher)** —
-the Retro Compilation Manager hub for self-compiling recomps.
+1. Unzip the release and run `SimpsonsWrestling.exe` (Linux: `./SimpsonsWrestling`).
+2. On the **Game** page, choose the `.cue` file of your disc (or drop it on the
+   window). The launcher checks that it is the USA disc.
+3. Press **PLAY**.
 
-[Downloads](https://github.com/RetroPortingToolKit/Retro-Launcher/releases) ·
-[Full README & features](https://github.com/RetroPortingToolKit/Retro-Launcher#readme)
+The launcher's settings are kept in `launcher.txt`, the renderer's in
+`settings.toml`, and memory-card saves in `saves/`, all next to the program.
+Hold **Shift** while starting it to show the launcher if you have hidden it.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/RetroPortingToolKit/Retro-Launcher/main/docs/screenshots/hub-and-game-launcher.png" alt="Retro hub with a background build, next to a title’s recomp-ui launcher" width="720">
-</p>
+## Launcher pages
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/RetroPortingToolKit/Retro-Launcher/main/docs/screenshots/queue-and-background-build.png" alt="Background cmake build with titles queued" width="720">
-</p>
+| Page | Settings |
+| --- | --- |
+| Game | Your disc image, checked against the USA disc's size |
+| Display | Window mode (windowed, borderless, exclusive), window size, widescreen, VSync |
+| Graphics | Render resolution (240p to 8K, or your screen's), smooth outlines, smooth textures, stable geometry, sharpening, brightness |
+| Gameplay | Frame rate (30 or 60), skip intro, unlock everything, frame-rate counter |
+| About | Show the launcher at startup, open the game folder, reset all settings |
 
-Retro checks for updates, installs the prebuilt release zips, and automates
-BIOS/ROM/save plumbing so you are not stuck repeating each game’s first run by hand.
-<!-- /retcomm-readme-launcher -->
+## How the features work
 
-## Legal
+All game-specific code is in [`simpsons_mods.c`](simpsons_mods.c), a trusted
+psxrecomp plugin (package `mods/preloaded/packages/simpsons.pc`). It never
+patches the game's code; it reads the game's own state and the launcher's
+switches.
 
-You must own the original game. Disc images under `disc/` are gitignored and
-must never be committed. Retail BIOS dumps are not redistributed and no C
-derived from one may be committed; releases run on the bundled MIT OpenBIOS.
+- **Match detection.** The top-level mode byte at `0x8007398C` is 0 in a match
+  (1 title, 3 menus and loading) and `0x800732E4` is set once the match's
+  wrestlers exist. This gates widescreen and the frame rate.
+- **Widescreen** uses psxrecomp's native-wide renderer
+  (`psx_mod_set_fixed_display_aspect(16, 9)`) with a world-scene predicate, so
+  only matches go wide.
+- **60 FPS.** The main loop (`0x80044F1C`) counts the VBlanks since the last
+  frame (`0x80044F80`) and moves everything by a step from a linear table
+  (`0x8006ECFC`, 68 per VBlank). A match runs at 20-30 FPS only because a frame
+  costs more than one VBlank of R3000A time. During matches the plugin
+  overclocks the emulated CPU to 300% (`psx_mod_set_cpu_overclock`, added to
+  the framework for this port), so every frame takes one VBlank: the game's
+  own timestep stays 1 and its speed is unchanged. Boot, menus and loading keep
+  stock CPU timing.
+- **Skip intro.** Entry hooks (`game.toml` `mod_function_entry_funcs`) end the
+  copyright card's 5-second loop in the boot routine (`0x8001D0F8`) and return
+  straight from PlayMovie (`0x80044628`) for the two logo movies. The memory
+  card check stays, because it loads your save.
+- **Unlocks.** Each VBlank the plugin sets the circuit and Bonus Match Up flags
+  (`0x80072BF0`, `0x80072BF2`, `0x80072BD0`) and clears the five hidden
+  wrestlers' lock words (`0x8006DCE4`..`0x8006DCF4`, 0 = unlocked, as the game
+  itself writes at `0x80024F24`).
 
-`generated/` (the recompiled game C) **is committed**: releases ship the
-compiled game, built by CI from that tree. Regenerate and commit it whenever
-seeds or the framework pin change.
+## Building
 
-Default app icon: `assets/psxrecomp.ico` (and `.png` / `.svg`) — Retro-themed controller mark from `psxrecomp/assets/`. Windows builds embed it via `APP_ICON`.
-
-Optional box art under `launcher_assets/img/` may come from
-[libretro-thumbnails](https://github.com/libretro-thumbnails/libretro-thumbnails)
-(`Named_Boxarts`); see `BOXART_SOURCE.txt` when present.
-
-## Quick start (dev)
+The repository holds the recompiled game C in `generated/`. Regenerate it only
+after changing `game.toml`'s recompiler settings or the seeds:
 
 ```bash
-git submodule update --init --recursive
-./psxrecomp/tools/ci/build_emitters.sh
-python3 psxrecomp/psxrecomp_cli.py generate \
-  --config game.toml --project-root . --disc disc/<your>.cue
-git add generated && git commit -m "Regenerate game C"
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release --target psx-runtime
+python3 psxrecomp/psxrecomp_cli.py generate --config game.toml --project-root . --disc "path/to/Simpsons Wrestling, The (USA).cue"
 ```
 
-Releases: tag `vX.Y.Z` (or run the *Release builds* workflow). CI builds the
-committed `generated/` C on Linux, Windows and macOS and attaches
-`tsw-<version>-<platform>.zip`, the compiled game. Locally:
-`scripts/package_release.sh build-release linux-x64`.
+**Windows** (Visual Studio 2022 Build Tools, CMake, Ninja; the runtime is
+built with the bundled clang-cl):
 
-## Symbols
+```bat
+build.bat
+build-launcher.bat
+powershell -File packaging\package_windows.ps1
+```
 
-Progressive map: `symbols.toml` → `python3 tools/sync_symbols.py` →
-`psx_symbols.h` (`PSX_FN_*`). See `psxrecomp/docs/SYMBOLS.md`.
+**Linux** (cmake, ninja, gcc, and the X11, Wayland, GL, ALSA, PulseAudio and
+udev development packages; on Ubuntu: `libx11-dev libxext-dev libgl-dev
+libasound2-dev libpulse-dev libwayland-dev libxkbcommon-dev libxrandr-dev
+libxcursor-dev libxi-dev libxss-dev libudev-dev libgtk-3-dev zlib1g-dev`):
 
-## Framework pins
+```bash
+./build_linux.sh
+./packaging/package_linux.sh
+```
 
-Submodule gitlinks (`psxrecomp`, optional `recomp-ui`, nested `recomp-net`)
-are authoritative. `framework_pins.txt` is an optional scaffold snapshot;
-release CI logs SHAs with `record_pins.sh` but builds whatever the gitlinks
-resolve to. Bump submodules deliberately — do not float on `main`/`master`
-in release CI.
+The launcher and the game are two programs because the psxrecomp runtime uses
+SDL3 and the TRG Launcher's standalone window uses SDL2. The launcher writes
+the settings and starts `SimpsonsWrestling_Recompiled` with `--no-launcher
+--disc <your cue>`.
 
-<!-- retcomm-readme-raid -->
----
+## Credits
 
-<p align="center">
-  <sub><b>R.A.I.D. — Retro AI Development</b> · a Discord for AI-assisted retro reverse-engineering, decomp &amp; recomp</sub>
-</p>
-
-<p align="center">
-  <a href="https://discord.gg/Ad9BwSzctP"><img src=".github/raid-discord.png" alt="Join the Retro AI Development (R.A.I.D.) Discord" width="200"></a>
-</p>
-<!-- /retcomm-readme-raid -->
+- [psxrecomp](https://github.com/mstan/psxrecomp) and its contributors
+- Cheat-code research for the NTSC-U unlock flags: the CodeBreaker code lists
+  at almarsguides.com
+- The Simpsons Wrestling © 2001 Twentieth Century Fox Film Corporation;
+  developed by Big Ape Productions, published by Fox Interactive / Activision.
+  This project is not affiliated with them and includes none of their data.

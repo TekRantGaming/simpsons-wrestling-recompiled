@@ -87,3 +87,12 @@ starvation_dump.jsonl
 !/catalog_identity.json
 !/disc_probe.json
 !/.recomp.json
+
+# Simpsons Wrestling local builds and logs
+/build-dev/
+/build-launcher/
+/build-linux/
+/build-linux-launcher/
+/dist/
+/*.log
+/toolchain/
