@@ -21,12 +21,13 @@ The Simpsons Wrestling (PlayStation, USA) as a native Windows and Linux program:
 - **Fast loading** for the loading screens
 - **Controllers** picked up whenever you switch them on, automatic set-up for two players, button remapping, vibration strength and stick deadzone; full keyboard remapping
 - **Launcher**: monitor choice, fill-the-screen, CRT filter and scanlines, volume and sound delay, save folder shortcut
+- **Updates**: the launcher checks GitHub for new versions when it opens and installs them with one click, keeping your settings and saves
 
 ### Install
 
 **Windows:**
 1. Unzip anywhere.
-2. Run `SimpsonsWrestling.exe`. The launcher opens.
+2. Run `SimpsonsWrestling.exe`, the only program in the folder. The launcher opens; the game, your settings and your saves live in the `game` folder next to it.
 3. On the **Game** page, click **Browse for the .cue file...** and pick your disc image (or drop the `.cue` onto the window).
 4. Press **PLAY**.
 

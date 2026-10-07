@@ -78,7 +78,7 @@ Everything is set up before the game starts. The first time you open it, the lau
 - **Bring your own disc**: pick the `.cue` file of your disc image, or drop it onto the window
 - Checks it really is **The Simpsons Wrestling (USA)** before you can play
 - The game reads your disc image where it is: **nothing is copied or downloaded**
-- Your progress goes to **memory card files** in the `saves` folder
+- Your progress goes to **memory card files** in the `game\saves` folder
 
 </td>
 </tr>
@@ -153,6 +153,7 @@ Everything is set up before the game starts. The first time you open it, the lau
 <td valign="middle">
 
 ### About
+- **Updates**: checks GitHub for a new version when the launcher opens and installs it with one click, keeping your settings and saves (ask first, automatic, or off)
 - Turn the launcher off and **hold Shift** at start to bring it back
 - Open your **save folder** or the **game folder** in one click
 - **Reset** every setting
@@ -234,11 +235,13 @@ Change any of them on the launcher's **Controls** page. With **Automatic** (the 
 **You need:** Windows 10 or 11 (64-bit), **or** 64-bit Linux from 2023 or later (glibc 2.38), a graphics card with OpenGL 3.3, and your own disc image of **The Simpsons Wrestling** for the PlayStation, North American release (**SLUS-01227**), as a `.cue` file with its `.bin`.
 
 1. Download **SimpsonsWrestling-v...-windows-x64.zip** from the [latest release](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases/latest) and unzip it anywhere.
-2. Run **SimpsonsWrestling.exe**. The launcher opens.
+2. Run **SimpsonsWrestling.exe**, the only program in the folder. The launcher opens. (The game itself, your settings and your saves live in the `game` folder next to it.)
 3. On the **Game** page click **Browse for the .cue file...** and pick your disc image, or drop the `.cue` onto the window. The launcher checks that it is the right disc. The `.bin` must sit next to the `.cue`.
 4. Press **PLAY**.
 
 **Linux:** download **SimpsonsWrestling-v...-linux-x86_64.AppImage** instead, make it executable (right-click > Properties > Permissions, or `chmod +x`) and run it. Pick your disc the same way. The program, your settings and your saves go into a `SimpsonsWrestling-data` folder next to the AppImage; a newer AppImage keeps your settings and saves.
+
+**Updates:** when the launcher opens it checks this repository's releases and offers new versions (About page: **Updates**). Your settings and saves are kept. On Linux the update replaces the AppImage.
 
 <sub>Windows may warn that the program is from an unknown publisher (it is not code-signed). Choose **More info**, then **Run anyway**.</sub>
 
@@ -246,9 +249,9 @@ Change any of them on the launcher's **Controls** page. With **Automatic** (the 
 
 ## Good to know
 
-- **Saves** are memory card files in the `saves` folder next to the game (About > Open save folder). Copy that folder to keep your progress.
+- **Saves** are memory card files in the `game\saves` folder (About > Open save folder). Copy that folder to keep your progress.
 - **Vibration:** the game's own Options menu starts with Vibration off. Turn it on there; the launcher's Controls page sets the strength.
-- **Settings** live next to the game: `launcher.txt` (the launcher), `settings.toml` (picture and sound), `input.ini` (controller) and `keybinds.ini` (keyboard).
+- **Settings** live in the `game` folder: `launcher.txt` (the launcher), `settings.toml` (picture and sound), `input.ini` (controller) and `keybinds.ini` (keyboard).
 - **Performance:** if a match runs below full speed, lower the render resolution on the Graphics page. The game keeps its normal speed either way; when the PC is busy the frame rate drops first.
 - **120 FPS** is experimental. It needs a 120 Hz screen and a fast CPU, works best at low render resolutions, and you may see some flicker. 60 FPS is recommended.
 

@@ -33,15 +33,17 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 APPDIR="$WORK/AppDir"
 PROG="$APPDIR/usr/share/simpsons-wrestling"
-mkdir -p "$PROG/mods" "$PROG/docs"
-cp "$BIN/SimpsonsWrestling" "$BIN/SimpsonsWrestling_Recompiled" "$BIN/psx_game_version.txt" \
-   "$BIN/game_options.toml" "$ROOT/game.toml" "$ROOT/README.md" "$PROG/"
-cp -r "$BIN/assets" "$BIN/bios" "$PROG/"
-# Bundled mod packages only: mods/state.toml belongs to the player's folder.
-cp -r "$BIN/mods/bundled" "$PROG/mods/"
-[ -f "$BIN/mods/README.md" ] && cp "$BIN/mods/README.md" "$PROG/mods/"
+# The Windows zip's layout: the launcher at the top, the game in game/.
+mkdir -p "$PROG/game/mods" "$PROG/docs"
+cp "$BIN/SimpsonsWrestling" "$ROOT/README.md" "$PROG/"
 cp -r "$ROOT/docs/images" "$PROG/docs/"
-chmod +x "$PROG/SimpsonsWrestling" "$PROG/SimpsonsWrestling_Recompiled"
+cp "$BIN/SimpsonsWrestling_Recompiled" "$BIN/psx_game_version.txt" "$BIN/game_options.toml" "$ROOT/game.toml" \
+   "$PROG/game/"
+cp -r "$BIN/assets" "$BIN/bios" "$PROG/game/"
+# Bundled mod packages only: mods/state.toml belongs to the player's folder.
+cp -r "$BIN/mods/bundled" "$PROG/game/mods/"
+[ -f "$BIN/mods/README.md" ] && cp "$BIN/mods/README.md" "$PROG/game/mods/"
+chmod +x "$PROG/SimpsonsWrestling" "$PROG/game/SimpsonsWrestling_Recompiled"
 
 cp "$ROOT/packaging/simpsons-wrestling.png" "$APPDIR/simpsons-wrestling.png"
 cat > "$APPDIR/simpsons-wrestling.desktop" <<'EOF'
@@ -64,12 +66,14 @@ if ! mkdir -p "$DATA" 2>/dev/null || [ ! -w "$DATA" ]; then
   DATA="${XDG_DATA_HOME:-$HOME/.local/share}/SimpsonsWrestlingRecompiled"
   mkdir -p "$DATA" || exit 1
 fi
-if ! cmp -s "$PROG/SimpsonsWrestling_Recompiled" "$DATA/SimpsonsWrestling_Recompiled" ||
+if ! cmp -s "$PROG/game/SimpsonsWrestling_Recompiled" "$DATA/game/SimpsonsWrestling_Recompiled" ||
    ! cmp -s "$PROG/SimpsonsWrestling" "$DATA/SimpsonsWrestling"; then
-  rm -rf "$DATA/mods/bundled"
+  rm -rf "$DATA/game/mods/bundled"
   cp -rf "$PROG/." "$DATA/" || exit 1
 fi
-mkdir -p "$DATA/saves"
+mkdir -p "$DATA/game/saves"
+# The launcher's updater replaces this AppImage file.
+[ -n "$APPIMAGE" ] && export SW_APPIMAGE="$APPIMAGE"
 # The runtime anchors its files on $APPIMAGE's folder when that is set (for a
 # game run from inside the image); this copy lives in $DATA instead.
 unset APPIMAGE APPDIR ARGV0 OWD

@@ -5,7 +5,12 @@
 // recompiled game (SimpsonsWrestling_Recompiled) with the chosen disc. The PC
 // features the game's plugin applies (simpsons_mods.c) read launcher.txt too.
 //
-//   SimpsonsWrestling [--page N] [--ready] [--expand] [--screenshot out.ppm]
+// A release keeps the game program, its data and every settings file in a game
+// folder next to this program, so the launcher is the only program a player
+// sees; a development build has everything in one folder. When the launcher
+// opens it can look for a newer release on GitHub and install it.
+//
+//   SimpsonsWrestling [--launcher] [--page N] [--ready] [--expand] [--screenshot out.ppm]
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -15,9 +20,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -31,6 +38,7 @@
 #include <unistd.h>
 #endif
 
+#include "trg/download.h"
 #include "trg/launcher.h"
 #include "trg/platform.h"
 #include "trg/standalone.h"
@@ -63,6 +71,15 @@ std::string ExeDir() {
   std::replace(path.begin(), path.end(), '\\', '/');
   const size_t slash = path.rfind('/');
   return slash == std::string::npos ? std::string("./") : path.substr(0, slash + 1);
+}
+
+// The folder with the game program, its data and every settings file: game/
+// next to the launcher in a release, the launcher's own folder in a
+// development build. The game's plugin reads launcher.txt from the game's
+// folder, so the launcher keeps its settings there too.
+std::string GameDir(const std::string& root) {
+  const std::string sub = root + "game/";
+  return trg::FileSize(sub + kGameExeName) > 0 ? sub : root;
 }
 
 std::string Lower(std::string s) {
@@ -428,10 +445,264 @@ void WritePpm(const char* path, int w, int h) {
   std::fclose(f);
 }
 
+// --------------------------------------------------------------- updates ---
+// Updates from GitHub releases, as in the other TekRant ports: when the
+// launcher opens it reads this repository's releases, and when one is newer
+// than this copy it offers to download it and swap in the new program files.
+// Settings, saves and caches are never replaced. Nothing is contacted when
+// Updates is Off.
+
+namespace fs = std::filesystem;
+
+// The release list, not /releases/latest: that one skips prereleases.
+constexpr const char* kReleasesApi =
+    "https://api.github.com/repos/TekRantGaming/simpsons-wrestling-recompiled/releases?per_page=20";
+constexpr const char* kReleasePage = "https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases/tag/";
+#ifdef _WIN32
+constexpr const char* kUpdateSuffix = "-windows-x64.zip";
+const char* const kLauncherExeName = "SimpsonsWrestling.exe";
+#else
+constexpr const char* kUpdateSuffix = "-linux-x86_64.AppImage";
+const char* const kLauncherExeName = "SimpsonsWrestling";
+#endif
+
+struct Release {
+  std::string tag;   // "v1.0.1"
+  std::string url;   // this platform's download
+  std::string page;  // release page, for the player
+};
+
+fs::path U8(const std::string& utf8) { return fs::u8path(utf8); }
+
+// "v1.2.3" / "1.2.3-beta" -> {1, 2, 3}
+std::vector<int> ParseVersion(const std::string& text) {
+  std::vector<int> parts;
+  std::smatch m;
+  std::string rest = text;
+  static const std::regex number(R"((\d+))");
+  while (parts.size() < 4 && std::regex_search(rest, m, number)) {
+    parts.push_back(std::stoi(m[1].str()));
+    rest = m.suffix().str();
+    if (rest.empty() || rest[0] != '.') break;
+  }
+  while (parts.size() < 3) parts.push_back(0);
+  return parts;
+}
+
+// The first "key": "value" string in a JSON text, from `from` on.
+std::string JsonString(const std::string& json, const std::string& key, size_t from = 0, size_t* at = nullptr) {
+  const std::string needle = "\"" + key + "\"";
+  const size_t k = json.find(needle, from);
+  if (k == std::string::npos) return {};
+  const size_t colon = json.find(':', k + needle.size());
+  const size_t q1 = colon == std::string::npos ? colon : json.find('"', colon + 1);
+  if (q1 == std::string::npos) return {};
+  std::string value;
+  for (size_t i = q1 + 1; i < json.size() && json[i] != '"'; ++i) {
+    if (json[i] == '\\' && i + 1 < json.size()) ++i;
+    value += json[i];
+  }
+  if (at) *at = k;
+  return value;
+}
+
+// The newest published release with this platform's download, when it is
+// newer than `current` (blocking: run it on a Task). `error` gets a message
+// when the check itself failed.
+std::optional<Release> CheckLatest(const std::string& current, std::string* error) {
+  std::string json;
+  if (std::string err = trg::HttpGet(kReleasesApi, json); !err.empty()) {
+    *error = err;
+    return std::nullopt;
+  }
+  std::optional<Release> best;
+  for (size_t pos = 0;;) {
+    size_t tag_at = 0;
+    const std::string tag = JsonString(json, "tag_name", pos, &tag_at);
+    if (tag.empty()) break;
+    size_t next_at = 0;
+    const bool has_next = !JsonString(json, "tag_name", tag_at + 1, &next_at).empty();
+    const std::string object = json.substr(tag_at, (has_next ? next_at : json.size()) - tag_at);
+    pos = tag_at + 1;
+    if (object.find("\"draft\": true") != std::string::npos || object.find("\"draft\":true") != std::string::npos)
+      continue;
+    Release r;
+    r.tag = tag;
+    r.page = kReleasePage + tag;
+    for (size_t a = 0;;) {
+      size_t url_at = 0;
+      const std::string url = JsonString(object, "browser_download_url", a, &url_at);
+      if (url.empty()) break;
+      if (url.size() >= std::strlen(kUpdateSuffix) &&
+          url.compare(url.size() - std::strlen(kUpdateSuffix), std::string::npos, kUpdateSuffix) == 0) {
+        r.url = url;
+        break;
+      }
+      a = url_at + 1;
+    }
+    if (r.url.empty()) continue;
+    if (!best || ParseVersion(r.tag) > ParseVersion(best->tag)) best = r;
+  }
+  if (!best && json.find("tag_name") == std::string::npos) *error = "GitHub did not return any releases.";
+  if (!best || ParseVersion(best->tag) <= ParseVersion(current)) return std::nullopt;
+  return best;
+}
+
+// The player's own files in the game folder, which an update never replaces.
+bool IsPlayerFile(const fs::path& rel) {
+  auto it = rel.begin();
+  if (it == rel.end() || it->string() != "game") return false;
+  if (++it == rel.end()) return false;
+  const std::string name = it->string();
+  if (name == "saves" || name == "cache") return true;
+  if (name == "launcher.txt" || name == "settings.toml" || name == "input.ini" || name == "keybinds.ini") return true;
+  return name == "mods" && ++it != rel.end() && (it->string() == "state.toml" || it->string() == "installed");
+}
+
+#ifdef _WIN32
+// Runs a command hidden and waits; returns its exit code (-1 if it could not start).
+int RunHidden(std::wstring command) {
+  STARTUPINFOW si{};
+  si.cb = sizeof si;
+  si.dwFlags = STARTF_USESHOWWINDOW;
+  si.wShowWindow = SW_HIDE;
+  PROCESS_INFORMATION pi{};
+  if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+    return -1;
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD code = 1;
+  GetExitCodeProcess(pi.hProcess, &code);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return int(code);
+}
+#endif
+
+// Task job: downloads the release and puts its program files in place.
+// Windows: unpacks the zip with Windows' own tar and copies every file over
+// the launcher's folder; a running exe can be renamed but not overwritten, so
+// each replaced file is moved aside to *.old first. Linux: the new AppImage
+// replaces the one the player started (a running AppImage stays mounted).
+std::string InstallUpdate(trg::Task& task, const Release& release, const std::string& root) {
+  std::error_code ec;
+#ifdef _WIN32
+  const fs::path work = fs::temp_directory_path(ec) / "simpsons_wrestling_update";
+  fs::remove_all(work, ec);
+  fs::create_directories(work / "files", ec);
+  const fs::path zip = work / "update.zip";
+  task.SetLabel("Downloading " + release.tag);
+  if (std::string err = trg::DownloadFile(task, release.url, zip.u8string()); !err.empty()) return err;
+  if (task.cancelled()) return "Cancelled.";
+
+  task.SetLabel("Unpacking");
+  task.Progress(-1, -1);
+  wchar_t system_dir[MAX_PATH];
+  GetSystemDirectoryW(system_dir, MAX_PATH);
+  const std::wstring cmd = L"\"" + (fs::path(system_dir) / "tar.exe").wstring() + L"\" -xf \"" + zip.wstring() +
+                           L"\" -C \"" + (work / "files").wstring() + L"\"";
+  if (const int code = RunHidden(cmd); code != 0)
+    return "Could not unpack the update (tar exit code " + std::to_string(code) + ").";
+
+  // The new program: the folder holding the launcher inside the zip.
+  fs::path from;
+  for (auto& entry : fs::recursive_directory_iterator(work / "files", ec))
+    if (entry.path().filename() == kLauncherExeName) {
+      from = entry.path().parent_path();
+      break;
+    }
+  if (from.empty() || !fs::exists(from / "game" / kGameExeName)) return "The update does not contain the game.";
+
+  task.SetLabel("Installing");
+  const fs::path to = U8(root);
+  for (auto& entry : fs::recursive_directory_iterator(from, ec)) {
+    if (!entry.is_regular_file()) continue;
+    const fs::path rel = entry.path().lexically_relative(from);
+    const fs::path target = to / rel;
+    if (IsPlayerFile(rel) && fs::exists(target)) continue;
+    fs::create_directories(target.parent_path(), ec);
+    const fs::path old = target.wstring() + L".old";
+    fs::remove(old, ec);
+    const bool had = fs::exists(target);
+    if (had) {
+      fs::rename(target, old, ec);
+      if (ec) return "Could not replace " + rel.u8string() + ": " + ec.message();
+    }
+    fs::copy_file(entry.path(), target, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+      if (had) fs::rename(old, target, ec);  // put the old one back
+      return "Could not install " + rel.u8string() + ".";
+    }
+  }
+  fs::remove_all(work, ec);
+  return "";
+#else
+  (void)root;
+  // AppRun passes the AppImage's own path on (and clears APPIMAGE for the game).
+  const char* appimage = std::getenv("SW_APPIMAGE");
+  if (!appimage || !*appimage) return "Download the new version from " + release.page;
+  const fs::path target = appimage;
+  const fs::path fresh = target.string() + ".new";
+  fs::remove(fresh, ec);
+  task.SetLabel("Downloading " + release.tag);
+  if (std::string err = trg::DownloadFile(task, release.url, fresh.string()); !err.empty()) return err;
+  if (task.cancelled()) return "Cancelled.";
+  task.SetLabel("Installing");
+  fs::permissions(fresh, fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec |
+                             fs::perms::others_read | fs::perms::others_exec,
+                  fs::perm_options::replace, ec);
+  fs::rename(fresh, target, ec);
+  if (ec) return "Could not replace " + target.filename().string() + ": " + ec.message();
+  return "";
+#endif
+}
+
+// Removes the *.old files the previous update left (they were still in use).
+void CleanUpPreviousUpdate(const std::string& root) {
+  std::error_code ec;
+  if (const char* appimage = std::getenv("SW_APPIMAGE"); appimage && *appimage)
+    fs::remove(fs::path(appimage).string() + ".new", ec);  // an interrupted AppImage update
+  std::vector<fs::path> old;
+  for (auto it = fs::recursive_directory_iterator(U8(root), ec); it != fs::recursive_directory_iterator();
+       it.increment(ec)) {
+    if (ec) break;
+    if (it->is_directory() && (it->path().filename() == "saves" || it->path().filename() == "cache"))
+      it.disable_recursion_pending();
+    else if (it->is_regular_file() && it->path().extension() == ".old")
+      old.push_back(it->path());
+  }
+  for (const fs::path& p : old) fs::remove(p, ec);
+}
+
+// Starts the (new) launcher again after an update. The test version is not
+// passed on: the new launcher reports its real one.
+void RelaunchLauncher(const std::string& root) {
+#ifdef _WIN32
+  SetEnvironmentVariableW(L"SW_UPDATE_TEST_VERSION", nullptr);
+  const std::wstring exe = (U8(root) / kLauncherExeName).wstring();
+  std::wstring cmd = L"\"" + exe + L"\" --launcher";
+  STARTUPINFOW si{};
+  si.cb = sizeof si;
+  PROCESS_INFORMATION pi{};
+  if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, U8(root).wstring().c_str(), &si, &pi)) {
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+  }
+#else
+  unsetenv("SW_UPDATE_TEST_VERSION");
+  const char* appimage = std::getenv("SW_APPIMAGE");
+  const std::string exe = appimage && *appimage ? appimage : root + kLauncherExeName;
+  if (fork() == 0) {
+    execl(exe.c_str(), exe.c_str(), "--launcher", static_cast<char*>(nullptr));
+    _exit(127);
+  }
+#endif
+}
+
 // --------------------------------------------------------------- launcher ---
 
 struct App {
-  std::string dir = ExeDir();
+  std::string root = ExeDir();      // the launcher's folder
+  std::string dir = GameDir(root);  // the game, its data and every settings file
   trg::TextFileSettings settings{dir + "launcher.txt"};
   bool force_ready = false;
   std::string picked;  // a .cue chosen this session, before it is accepted
@@ -444,6 +715,11 @@ struct App {
   // before the settings are written, and a fresh SDL can take longer than its
   // short probe to list a wireless pad.
   size_t pads_seen = 0;
+  // Updates (About page; checked when the launcher opens).
+  trg::Task update_check, update_install;
+  std::optional<Release> update_found;  // written by the check Task, read after Finish()
+  std::string update_error, update_status;
+  bool manual_check = false;
 
   App() { LoadInputFiles(); }
 
@@ -527,8 +803,8 @@ struct App {
     ui.EndRows();
     ui.Spacer(6);
     ui.Paragraph(
-        "Saves go to the saves folder next to this program as memory card files, so your progress carries over "
-        "between sessions.");
+        "Saves go to memory card files in the game's saves folder (About > Open save folder), so your progress "
+        "carries over between sessions.");
   }
 
   static void PageDisplay(trg::Ui& ui) {
@@ -691,12 +967,109 @@ struct App {
         "psxrecomp. It runs from your own copy of the game: no game data is included.");
     ui.Spacer(4);
     ui.LauncherVisibilityRow();
+    if (CanUpdate()) {
+      ui.Choice("Updates",
+                "When the launcher opens, look for a newer version of this port on GitHub. Ask shows a pop-up first; "
+                "Automatic installs it straight away. Your settings and saves are kept. Only GitHub is contacted, and "
+                "only when the launcher opens.",
+                "updates", "ask", {{"ask", "Ask"}, {"auto", "Automatic"}, {"off", "Off"}});
+      if (!ui.TaskProgress(update_install) &&
+          ui.ButtonRow("Check for updates", update_status.empty() ? nullptr : update_status.c_str(),
+                       update_check.running() ? "Checking..." : "Check now") &&
+          !update_check.running()) {
+        manual_check = true;
+        StartUpdateCheck();
+      }
+    }
     ui.FolderRow("Save data", "Your memory card files.", "Open save folder", dir + "saves");
-    ui.FolderRow("Game folder", "Settings (launcher.txt, settings.toml, input.ini, keybinds.ini) and the game program.",
+    ui.FolderRow("Game folder", "The game program and its settings (launcher.txt, settings.toml, input.ini, "
+                 "keybinds.ini).",
                  "Open game folder", dir);
     ui.ResetAllRow();
-    const std::string version = ReadFirstLine(dir + "psx_game_version.txt");
+    const std::string version = CurrentVersion();
     ui.Info("Version", version.empty() ? "unknown" : version.c_str());
+  }
+
+  // ------------------------------------------------------------ updates ---
+  // This copy's version (the game's version stamp). SW_UPDATE_TEST_VERSION
+  // makes it look older, to try an update against the live release.
+  std::string CurrentVersion() const {
+    if (const char* test = std::getenv("SW_UPDATE_TEST_VERSION"); test && *test) return test;
+    return ReadFirstLine(dir + "psx_game_version.txt");
+  }
+
+  // Updates replace a release download's files: the Windows release layout
+  // (game/ beside the launcher) or the AppImage. A development build is left
+  // alone.
+  bool CanUpdate() const {
+#ifdef _WIN32
+    return dir != root;
+#else
+    const char* appimage = std::getenv("SW_APPIMAGE");
+    return appimage && *appimage;
+#endif
+  }
+
+  void StartUpdateCheck() {
+    const std::string current = CurrentVersion();
+    update_check.Start("Checking for updates", [this, current](trg::Task&) {
+      std::string error;
+      update_found = CheckLatest(current, &error);
+      update_error = error;
+      return std::string();
+    });
+  }
+
+  void StartUpdateInstall(trg::Launcher& l) {
+    if (!update_found || update_install.running()) return;
+    l.GoToPage(l.FindPage("About"));
+    const Release release = *update_found;
+    const std::string to = root;
+    update_install.Start("Updating", [release, to](trg::Task& t) { return InstallUpdate(t, release, to); });
+  }
+
+  // Each frame: reports a finished check (a pop-up, or installs straight away
+  // with Updates on Automatic) and a finished install. Returns true when the
+  // new version is in place and the launcher should restart.
+  bool PollUpdates(trg::Launcher& l) {
+    if (update_check.Finish() != trg::Task::State::kIdle) {
+      if (update_found) {
+        update_status = "Version " + update_found->tag + " is available.";
+        if (settings.Get("updates", "ask") == "auto") {
+          StartUpdateInstall(l);
+        } else {
+          trg::PlayPrompt p;
+          p.title = "Update available: " + update_found->tag;
+          p.paragraphs = {"A newer version of The Simpsons Wrestling PC port is available (you have " +
+                              CurrentVersion() + ").",
+                          "Update now downloads it from GitHub, installs it and restarts the launcher. Your "
+                          "settings and saves are kept."};
+          p.footnote = update_found->page;
+          trg::PromptButton now;
+          now.label = "Update now";
+          now.accent = true;
+          now.play = false;
+          now.action = [this, &l] { StartUpdateInstall(l); };
+          trg::PromptButton later;
+          later.label = "Later";
+          later.play = false;
+          p.buttons = {now, later};
+          l.ShowPrompt(std::move(p));
+        }
+      } else {
+        update_status = update_error.empty() ? "You have the latest version." : "Could not check: " + update_error;
+        if (manual_check) l.SetStatus(update_status);
+      }
+      manual_check = false;
+    }
+    std::string error;
+    switch (update_install.Finish(&error)) {
+      case trg::Task::State::kDone: return true;
+      case trg::Task::State::kFailed: l.SetStatus("Update failed: " + error, 10); break;
+      case trg::Task::State::kCancelled: l.SetStatus("Update cancelled."); break;
+      default: break;
+    }
+    return false;
   }
 
   // The runtime's own settings, from the launcher's choices.
@@ -828,6 +1201,7 @@ int main(int argc, char** argv) {
   };
   config.start_page = start_page >= 0 ? start_page : app.Ready() ? 1 : 0;
   config.can_play = [&] {
+    if (app.update_install.running()) return trg::PlayCheck{false, "Wait for the update to finish.", 0};
     if (!app.Ready()) return trg::PlayCheck{false, "Select your game disc first.", 0};
     return trg::PlayCheck{};
   };
@@ -865,6 +1239,8 @@ int main(int argc, char** argv) {
 
   trg::Launcher launcher(std::move(config));
   const std::vector<uint32_t> icon = DonutIcon(128);
+  CleanUpPreviousUpdate(app.root);
+  if (screenshot.empty() && app.CanUpdate() && app.settings.Get("updates", "ask") != "off") app.StartUpdateCheck();
 
   trg::WindowOptions window;
   window.title = "The Simpsons Wrestling - Launcher";
@@ -874,6 +1250,11 @@ int main(int argc, char** argv) {
   int frames = 0, pad_polls = 0;
   hooks.after_render = [&](trg::Launcher& l, int w, int h) {
     if (pad_polls++ % 30 == 0) app.pads_seen = ConnectedControllers().size();
+    if (app.PollUpdates(l)) {  // the new version is in place: start it and close this one
+      RelaunchLauncher(app.root);
+      l.RequestQuit();
+      return;
+    }
     if (!app.picked.empty()) {  // a dropped file: check it on the UI thread
       const std::string p = std::move(app.picked);
       app.picked.clear();
