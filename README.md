@@ -4,8 +4,8 @@
 
 <br>
 
-[![Latest release](https://img.shields.io/github/v/release/TekRantGaming/simpsons-wrestling-recompiled?style=for-the-badge&label=release&color=f2c94c&labelColor=1a2b4c)](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/TekRantGaming/simpsons-wrestling-recompiled/total?style=for-the-badge&color=2f80ed&labelColor=1a2b4c)](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases)
+[![Latest release](https://img.shields.io/github/v/release/TekRantGaming/simpsons-wrestling-recompiled?style=for-the-badge&label=release&color=f2c94c&labelColor=1a2b4c&cacheSeconds=3600)](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/TekRantGaming/simpsons-wrestling-recompiled/total?style=for-the-badge&color=2f80ed&labelColor=1a2b4c&cacheSeconds=3600)](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/releases)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-2f80ed?style=for-the-badge&labelColor=1a2b4c)
 
 ### The Simpsons Wrestling on PC, running natively. Widescreen, HD, 60 FPS, everything unlocked.
