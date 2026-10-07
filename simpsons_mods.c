@@ -428,6 +428,53 @@ static int simpsons_wait_flip_filter(struct CPUState* cpu, uint32_t address) {
     return 0;
 }
 
+/* Fighter movement at 60 FPS. Velocities change per unit of time: gravity
+ * (obj+0xA0) and the push in 0x8002D8AC add accel * step >> 12, and the drag
+ * in 0x800391CC / 0x800392EC takes v * step * 8 >> 12 (step = obj+0x14C, 68
+ * per VBlank). But the position update at 0x8002E09C adds (vA + vB) * 3/4
+ * once per game frame, with no step. The game was tuned at its own 20-30 FPS
+ * (2-3 VBlanks a frame), so at one VBlank a frame every velocity-driven move
+ * (jumps, knockback, dashes, throws) covered about 2.5 times the distance: a
+ * jump rose 23,100 units instead of 8,800 and left the arena. Just before each
+ * axis is scaled by 3/4, the velocity sum is scaled by step / kMoveRefStep,
+ * the step of an average stock-match frame (2.5 VBlanks), so distance follows
+ * time instead of frames. Only with the frame-rate option on: "30 = original"
+ * keeps the original behaviour. */
+#define kMoveSiteX     0x8002E0A0u   /* sll v0, v1, 1   (v1 = vA.x + vB.x) */
+#define kMoveSiteZ     0x8002E0BCu   /* sll v0, a1, 1   (a1 = vA.z + vB.z) */
+#define kMoveSiteY     0x8002E0E4u   /* sll v1, a1, 1   (a1 = vA.y + vB.y) */
+#define kFighterStep   0x14Cu
+#define kMoveRefStep   170           /* 2.5 VBlanks of 68 */
+
+static int     s_move_fix = 0;
+static int32_t s_move_ref_step = kMoveRefStep;
+
+/* SIMPSONS_TRACE_FIGHTERS=1 (testing): a mod counter per fighter object the
+ * position update runs for, named by its address. */
+static void simpsons_trace_fighter(uint32_t object) {
+    static char     names[8][40];
+    static uint32_t objects[8];
+    static int      count = 0, enabled = -1;
+    if (enabled < 0) enabled = getenv("SIMPSONS_TRACE_FIGHTERS") != NULL;
+    if (!enabled) return;
+    for (int i = 0; i < count; i++)
+        if (objects[i] == object) { psx_mod_counter_add(names[i], 1); return; }
+    if (count == 8) return;
+    objects[count] = object;
+    snprintf(names[count], sizeof names[count], "simpsons.fighter.%08X", object);
+    psx_mod_counter_add(names[count++], 1);
+}
+
+static void simpsons_scale_move(struct CPUState* cpu, uint32_t address) {
+    if ((address & 0x1FFFFFFFu) == (kMoveSiteX & 0x1FFFFFFFu)) simpsons_trace_fighter(cpu->gpr[4]);
+    if (!s_move_fix) return;
+    const uint32_t reg = (address & 0x1FFFFFFFu) == (kMoveSiteX & 0x1FFFFFFFu) ? 3u : 5u;  /* v1 : a1 */
+    const int32_t step = (int32_t)psx_mod_read_word(cpu->gpr[4] + kFighterStep);  /* a0 = fighter */
+    if (step <= 0 || step > 10 * 68) return;
+    const int64_t v = (int32_t)cpu->gpr[reg];
+    cpu->gpr[reg] = (uint32_t)(int32_t)(v * step / s_move_ref_step);
+}
+
 static void simpsons_pc_activate(void) {
     load_settings();
     if (is_on(s_widescreen)) {
@@ -440,6 +487,9 @@ static void simpsons_pc_activate(void) {
         s_overclock_level = s_overclock;
         const char* gov = getenv("SIMPSONS_GOVERNOR");
         s_governed = !(gov && gov[0] == '0');
+        const char* ref = getenv("SIMPSONS_MOVE_REF");     /* testing: reference step */
+        if (ref && atoi(ref) > 0) s_move_ref_step = atoi(ref);
+        s_move_fix = !getenv("SIMPSONS_NO_MOVE_FIX");
     }
     if (is_on(s_skip_intro)) (void)psx_mod_set_auto_skip_fmv(1);
 }
@@ -459,5 +509,8 @@ PSX_MOD_CONSTRUCTOR(simpsons_register_mod_plugins) {
     (void)psx_mod_register_function_entry_plugin("simpsons.pc", kDrawOTag, simpsons_draw_otag);
     if (!getenv("SIMPSONS_NO_FAST_WAIT"))
         (void)psx_mod_register_function_filter_plugin("simpsons.pc", kWaitForFlip, simpsons_wait_flip_filter);
+    (void)psx_mod_register_instruction_plugin("simpsons.pc", kMoveSiteX, 0x00031040u, simpsons_scale_move);
+    (void)psx_mod_register_instruction_plugin("simpsons.pc", kMoveSiteZ, 0x00051040u, simpsons_scale_move);
+    (void)psx_mod_register_instruction_plugin("simpsons.pc", kMoveSiteY, 0x00051840u, simpsons_scale_move);
     (void)psx_mod_register_vblank_plugin("simpsons.pc", simpsons_pc_vblank);
 }

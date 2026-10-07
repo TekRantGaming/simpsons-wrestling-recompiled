@@ -41,6 +41,13 @@ mod_function_entry_funcs = [
   "0x8005E0CC",  # DrawOTag: widescreen HUD packets are tagged with their screen edge
   "0x800471E0",  # wait-for-flip spin: fast-forwarded to the VBlank that clears it
 ]
+# Fighter position update (0x8002E09C..): pos += (v + vB) * 3/4 once per game
+# frame with no frame step. At 60 FPS the velocity is scaled by the step first.
+mod_instruction_sites = [
+  "0x8002E0A0",  # x: sll v0, v1, 1   (v1 = vA.x + vB.x)
+  "0x8002E0BC",  # z: sll v0, a1, 1   (a1 = vA.z + vB.z)
+  "0x8002E0E4",  # y: sll v1, a1, 1   (a1 = vA.y + vB.y)
+]
 
 [runtime]
 window_title = "The Simpsons Wrestling"
