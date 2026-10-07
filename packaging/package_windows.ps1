@@ -13,6 +13,9 @@ Copy-Item "$bin\SimpsonsWrestling.exe", "$bin\SimpsonsWrestling_Recompiled.exe",
 if (Test-Path "$bin\psx_game_version.txt") { Copy-Item "$bin\psx_game_version.txt" $stage }
 foreach ($d in 'assets', 'bios', 'mods') { Copy-Item "$bin\$d" $stage -Recurse }
 Copy-Item "$root\README.md" "$stage\README.md"
+# the README's pictures, so it renders in a Markdown viewer
+New-Item -ItemType Directory -Force "$stage\docs" | Out-Null
+Copy-Item "$root\docs\images" "$stage\docs" -Recurse
 $zip = Join-Path $root "dist\$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path $stage -DestinationPath $zip

@@ -12,5 +12,6 @@ cp "$bin/SimpsonsWrestling" "$bin/SimpsonsWrestling_Recompiled" "$root/game.toml
 [ -f "$bin/psx_game_version.txt" ] && cp "$bin/psx_game_version.txt" "$stage/"
 for d in assets bios mods; do cp -r "$bin/$d" "$stage/"; done
 cp "$root/README.md" "$stage/"
+mkdir -p "$stage/docs" && cp -r "$root/docs/images" "$stage/docs/"
 tar -C "$root/dist" -czf "$root/dist/$name.tar.gz" "$name"
 echo "$root/dist/$name.tar.gz"
