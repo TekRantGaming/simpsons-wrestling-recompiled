@@ -80,7 +80,7 @@ switches.
   wrestlers' lock words (`0x8006DCE4`..`0x8006DCF4`, 0 = unlocked, as the game
   itself writes at `0x80024F24`).
 
-### Release-candidate additions
+### 1.0.0 additions
 
 - **Fast loading.** psxrecomp's host-pacing accelerator (`psx_mod_set_load_acceleration`)
   speeds up the wall-clock pacing of detected CD data loads; guest time is untouched.
@@ -163,3 +163,7 @@ The launcher and the game are two programs because the psxrecomp runtime uses
 SDL3 and the TRG Launcher's standalone window uses SDL2. The launcher writes
 the settings and starts `SimpsonsWrestling_Recompiled` with `--no-launcher
 --disc <your cue>`.
+
+### Linux AppImage
+
+`packaging/build_appimage.sh` packs `build-linux/` into `dist/SimpsonsWrestling-v<VERSION>-linux-x86_64.AppImage` (appimagetool from `$APPIMAGETOOL`, default `~/appimagetool-x86_64.AppImage`). The launcher and the runtime keep settings, saves and caches next to their own program files and an AppImage is read-only, so `AppRun` copies the program into `SimpsonsWrestling-data` next to the AppImage (`~/.local/share/SimpsonsWrestlingRecompiled` when that is not writable), replaces only the program files when the binaries differ, unsets `APPIMAGE`/`APPDIR` (the runtime would otherwise anchor its files on the AppImage's folder) and runs the copy. The binaries need glibc 2.38 and GLIBCXX 3.4.29; zlib and libOpenGL come from the system.

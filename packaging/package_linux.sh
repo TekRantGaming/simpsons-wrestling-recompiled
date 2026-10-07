@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Packages build-linux/ into dist/TheSimpsonsWrestling-Recompiled-v<VERSION>-linux-x64.tar.gz.
+# Packages build-linux/ into dist/SimpsonsWrestling-v<VERSION>-linux-x64.tar.gz.
 # Run ./build_linux.sh first. No game data is included.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 version="$(tr -d '[:space:]' < "$root/VERSION")"
 bin="$root/build-linux"
-name="TheSimpsonsWrestling-Recompiled-v$version-linux-x64"
+name="SimpsonsWrestling-v$version-linux-x64"
 stage="$root/dist/$name"
 rm -rf "$stage" && mkdir -p "$stage/saves"
 cp "$bin/SimpsonsWrestling" "$bin/SimpsonsWrestling_Recompiled" "$root/game.toml" "$bin/game_options.toml" "$stage/"
