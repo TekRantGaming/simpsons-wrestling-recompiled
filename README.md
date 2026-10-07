@@ -103,7 +103,7 @@ test on a native Linux install.
 
 - Pausing a match in widescreen puts the TAUNT labels back at their 4:3
   positions and darkens only the 4:3 area until you unpause
-  ([details](docs/issues/pause-menu-widescreen.md)).
+  ([#1](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/issues/1)).
 
 ## Building
 

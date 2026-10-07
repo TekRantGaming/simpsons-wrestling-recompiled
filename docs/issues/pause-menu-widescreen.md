@@ -1,6 +1,6 @@
 # Pause menu in widescreen: TAUNT labels and darkening stay in the 4:3 area
 
-**To file as a GitHub issue once the repository is published.**
+Tracked as [issue #1](https://github.com/TekRantGaming/simpsons-wrestling-recompiled/issues/1).
 
 ## What happens
 
