@@ -1,13 +1,14 @@
 {
   "$schema": "https://recomp.fyi/schema/v1.json",
-  "game": "SimpsonsWrestling",
+  "game": "The Simpsons Wrestling",
   "system": "PS1",
   "type": "recomp",
-  "toolchain": "psxrecomp",
-  "status": "exploring",
-  "project": "SimpsonsWrestlingRecomp",
-  "original": {
-    "region": "USA",
-    "serial": "SLUS-01227"
-  }
+  "original": { "region": "USA", "serial": "SLUS-01227" },
+  "project": "The Simpsons Wrestling Recompiled",
+  "status": "released",
+  "targets": ["Windows", "Linux"],
+  "toolchain": "PSXRecomp",
+  "approach": "Static recompilation with PSXRecomp",
+  "maintainers": [{ "name": "TekRantGaming", "link": "https://github.com/TekRantGaming" }],
+  "notes": "Bring your own disc."
 }
