@@ -46,6 +46,14 @@ static void exe_dir(char* out, size_t size) {
 #ifdef _WIN32
     DWORD n = GetModuleFileNameA(NULL, out, (DWORD)size);
     if (n == 0 || n >= size) { out[0] = '\0'; return; }
+#elif defined(__ANDROID__)
+    /* /proc/self/exe is Android's app_process. The game's folder is the
+     * app's files folder, which android/native/android_host.c made the
+     * working directory before main(). */
+    if (!getcwd(out, size - 1)) { out[0] = '\0'; return; }
+    size_t len = strlen(out);
+    if (len && out[len - 1] != '/') { out[len] = '/'; out[len + 1] = '\0'; }
+    return;
 #else
     ssize_t n = readlink("/proc/self/exe", out, size - 1);
     if (n <= 0) { out[0] = '\0'; return; }

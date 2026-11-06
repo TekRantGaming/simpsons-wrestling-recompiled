@@ -275,7 +275,7 @@ build-launcher.bat        :: the launcher
 powershell -File packaging\package_windows.ps1   :: optional: the release zip in dist\
 ```
 
-For Linux, run `./build_linux.sh` and then `packaging/build_appimage.sh` in Linux or WSL. How the port works, the measurements behind it and the full build notes are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+For Linux, run `./build_linux.sh` and then `packaging/build_appimage.sh` in Linux or WSL. For Android TV, run `./build_android.sh`: see [android/README.md](android/README.md). How the port works, the measurements behind it and the full build notes are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
 </details>
 
