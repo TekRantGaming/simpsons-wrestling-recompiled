@@ -14,7 +14,7 @@ plugins {
 
 def repoRoot = file('../..')
 def runtimeAssets = layout.buildDirectory.dir('runtime-assets').get().asFile
-def abiList = (project.findProperty('abis') ?: 'arm64-v8a,armeabi-v7a').split(',')*.trim()
+def abiList = (project.findProperty('abis') ?: 'armeabi-v7a').split(',')*.trim()
 def requireGameC = !(project.findProperty('allowSetupHost') ?: 'false').toBoolean()
 def gameVersion = file("${repoRoot}/VERSION").text.trim()
 

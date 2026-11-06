@@ -8,7 +8,8 @@ screen you can drive with the remote (choose your disc, settings, **PLAY**),
 and runs the game full screen.
 
 Made for **low-end TV boxes and TVs** (Mi Box, Chromecast with Google TV, Fire
-TV Stick, cheap Android 7+ boxes, both 64-bit and 32-bit ARM):
+TV Stick, cheap Android 7+ boxes). The APK is **armeabi-v7a** (32-bit ARM) by
+default, which installs on both 32-bit and 64-bit ARM TVs:
 
 - the **software renderer** at the original resolution: only OpenGL ES 2 is
   needed to show the picture, no desktop OpenGL or Vulkan
@@ -54,8 +55,8 @@ for the PC build, so the APK has to be built by someone with the disc.
 3. Build:
 
    ```sh
-   ./build_android.sh                     # arm64-v8a + armeabi-v7a
-   ./build_android.sh -Pabis=armeabi-v7a  # only one ABI (faster)
+   ./build_android.sh                                 # armeabi-v7a (default)
+   ./build_android.sh -Pabis=armeabi-v7a,arm64-v8a    # also a 64-bit build
    ```
 
    On Windows: `cd android` then `gradlew.bat assembleRelease`.

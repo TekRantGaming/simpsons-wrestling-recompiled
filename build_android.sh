@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build The Simpsons Wrestling for Android TV: android/app/build/outputs/apk/
-# release/app-release.apk, for arm64-v8a and armeabi-v7a TV boxes and TVs.
+# release/app-release.apk, for armeabi-v7a (32-bit ARM: runs on 32- and 64-bit
+# TV boxes). Add 64-bit with -Pabis=armeabi-v7a,arm64-v8a.
 #
 # Needs the Android SDK with NDK 27.2.12479018 and CMake 3.31.6 (Gradle installs
 # missing SDK parts itself when ANDROID_HOME points at an SDK whose licences
@@ -10,7 +11,7 @@
 #   python3 psxrecomp/psxrecomp_cli.py generate --config game.toml --project-root . \
 #       --disc "path/to/Simpsons Wrestling, The (USA).cue"
 #
-# Extra arguments go to Gradle, e.g.  ./build_android.sh -Pabis=arm64-v8a
+# Extra arguments go to Gradle, e.g.  ./build_android.sh -Pabis=armeabi-v7a,arm64-v8a
 set -euo pipefail
 cd "$(dirname "$0")"
 
