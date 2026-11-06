@@ -91,6 +91,7 @@ public class LauncherActivity extends Activity {
         if (discPath() == null) autoFindDisc();
         refresh();
         playButton.requestFocus();
+        unpackBundledDisc();
     }
 
     // ------------------------------------------------------------ settings
@@ -358,6 +359,84 @@ public class LauncherActivity extends Activity {
         } catch (IOException e) {
             toast("Could not unpack the game data: " + e.getMessage());
         }
+    }
+
+    // ------------------------------------------------------------ bundled disc
+
+    /**
+     * A private one-file build (gradle -PbundleDisc=...) carries the player's
+     * disc image in assets/bundled-disc. Unpack it once per installed version
+     * and select it, so PLAY works straight after installing.
+     */
+    private void unpackBundledDisc() {
+        final String[] names;
+        try {
+            names = getAssets().list("bundled-disc");
+        } catch (IOException e) {
+            return;
+        }
+        if (names == null || names.length == 0) return;
+        String main = null;
+        for (String n : names) if (ext(n).equals("cue") || ext(n).equals("chd")) main = n;
+        if (main == null) main = names[0];
+        final String mainName = main;
+        String stamp;
+        try {
+            stamp = String.valueOf(getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime);
+        } catch (PackageManager.NameNotFoundException e) {
+            stamp = "unknown";
+        }
+        final File marker = new File(home, ".bundled-disc");
+        final File dir = new File(home, "bundled-disc");
+        if (stamp.equals(readText(marker).trim()) && new File(dir, mainName).canRead()) {
+            if (discPath() == null) { useDisc(new File(dir, mainName)); refresh(); }
+            return;
+        }
+        final String stampFinal = stamp;
+        final AlertDialog progress = new AlertDialog.Builder(this)
+                .setTitle("Setting up the game")
+                .setMessage("First start: unpacking the disc…")
+                .setCancelable(false)
+                .show();
+        new Thread(() -> {
+            String error = null;
+            try {
+                dir.mkdirs();
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) f.delete();
+                for (String n : names) {
+                    long total = 0;
+                    try {
+                        total = getAssets().openFd("bundled-disc/" + n).getLength();
+                    } catch (IOException ignored) {
+                    }
+                    final long all = Math.max(total, 1);
+                    final long[] done = {0};
+                    try (InputStream in = getAssets().open("bundled-disc/" + n);
+                         OutputStream os = new FileOutputStream(new File(dir, n))) {
+                        copy(in, os, k -> {
+                            done[0] += k;
+                            final int pct = (int) Math.min(100, done[0] * 100 / all);
+                            runOnUiThread(() -> progress.setMessage("First start: unpacking the disc… " + pct + "%"));
+                        });
+                    }
+                }
+                writeText(marker, stampFinal);
+            } catch (IOException e) {
+                error = e.getMessage();
+            }
+            final String err = error;
+            runOnUiThread(() -> {
+                progress.dismiss();
+                if (err != null) {
+                    alert("Could not unpack the game: " + err + "\n\nIs there enough free space on the TV?");
+                } else {
+                    useDisc(new File(dir, mainName));
+                    refresh();
+                    playButton.requestFocus();
+                }
+            });
+        }).start();
     }
 
     // ------------------------------------------------------------ disc image

@@ -74,6 +74,11 @@ for the PC build, so the APK has to be built by someone with the disc.
 
    Or copy the APK to a USB stick and open it with a file manager on the TV.
 
+**One-file install:** `./build_android.sh -PbundleDisc="path/to/your.chd"` (or
+a `.cue`, which brings its `.bin` along) puts your disc image inside the APK.
+The app unpacks it on first start and PLAY works straight away. Such an APK
+contains the game: keep it to yourself and never publish it.
+
 `-PallowSetupHost=true` builds without `generated/` (an engine-only APK that
 cannot play the game; useful to check the toolchain).
 

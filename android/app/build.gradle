@@ -18,6 +18,26 @@ def abiList = (project.findProperty('abis') ?: 'armeabi-v7a').split(',')*.trim()
 def requireGameC = !(project.findProperty('allowSetupHost') ?: 'false').toBoolean()
 def gameVersion = file("${repoRoot}/VERSION").text.trim()
 
+// -PbundleDisc=<your .chd, or .cue/.bin> puts your own disc image inside the
+// APK (a private, one-file install: never publish such an APK). The launcher
+// unpacks it on first start and selects it.
+def bundleDisc = project.findProperty('bundleDisc')
+def bundledDiscAssets = layout.buildDirectory.dir('bundled-disc-assets').get().asFile
+if (bundleDisc) {
+    def src = file(bundleDisc)
+    if (!src.exists()) throw new GradleException("bundleDisc: ${src} does not exist")
+    def out = new File(bundledDiscAssets, 'bundled-disc')
+    out.deleteDir()
+    out.mkdirs()
+    def copyOne = { File f -> java.nio.file.Files.copy(f.toPath(), new File(out, f.name).toPath()) }
+    copyOne(src)
+    if (src.name.toLowerCase().endsWith('.cue')) {
+        (src.text =~ /(?im)^\s*FILE\s+"([^"]+)"/).each { m -> copyOne(new File(src.parentFile, m[1])) }
+    }
+} else {
+    bundledDiscAssets.deleteDir()
+}
+
 if (requireGameC && !file("${repoRoot}/generated/SLUS_012.27_dispatch.c").exists()) {
     throw new GradleException(
         "generated/ is missing: translate the game from your own disc first:\n" +
@@ -89,7 +109,14 @@ android {
     sourceSets {
         main {
             assets.srcDirs += runtimeAssets
+            assets.srcDirs += bundledDiscAssets
         }
+    }
+
+    androidResources {
+        // Disc images are stored as-is: they are already compressed (.chd)
+        // or large, and the launcher streams them out on first start.
+        noCompress 'chd', 'bin', 'cue', 'img'
     }
 
     packagingOptions {
