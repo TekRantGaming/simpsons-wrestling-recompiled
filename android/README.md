@@ -29,6 +29,10 @@ default, which installs on both 32-bit and 64-bit ARM TVs:
 
 Any of these:
 
+1. **Google Drive**: upload the disc image (a `.chd`, a single `.bin`, or a
+   `.zip` holding the `.cue` and `.bin`), share it as "Anyone with the link",
+   then pick **Import from Google Drive link…** in the app and type or paste
+   the link. The app downloads it straight to the TV.
 1. Copy it to a USB stick or the TV's Download folder, then pick
    **Choose disc image…** in the app. If the TV has no file picker, the app
    searches Downloads and USB drives itself.

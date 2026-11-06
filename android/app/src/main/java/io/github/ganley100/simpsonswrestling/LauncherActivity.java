@@ -24,7 +24,9 @@ import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.View;
 import android.view.ViewGroup;
+import android.text.InputType;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -45,7 +47,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.regex.Matcher;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.regex.Pattern;
 
 /**
@@ -245,6 +251,10 @@ public class LauncherActivity extends Activity {
         pick.setOnClickListener(v -> chooseDisc());
         col.addView(pick);
 
+        Button drive = makeButton("Import from Google Drive link…", BLUE, Color.WHITE, false);
+        drive.setOnClickListener(v -> askDriveLink());
+        col.addView(drive);
+
         TextView settingsTitle = makeText("Settings", 18, YELLOW, true);
         settingsTitle.setPadding(0, dp(14), 0, dp(2));
         col.addView(settingsTitle);
@@ -296,6 +306,8 @@ public class LauncherActivity extends Activity {
                     + "With two gamepads, two people can play.\n\n"
                     + "TV remote:  D-pad = D-pad,  OK = ✕,  Back = △,  Menu / Play-Pause = START.\n\n"
                     + "Getting your disc onto the TV:\n"
+                    + "• Google Drive: share the disc image as \"Anyone with the link\" (a .chd, a single .bin, or a .zip "
+                    + "with the .cue and .bin) and use \"Import from Google Drive link…\".\n"
                     + "• Copy the .cue and .bin (or a .chd) to a USB stick or the Download folder, then use "
                     + "\"Choose disc image…\".\n"
                     + "• Or copy them to Android/data/" + getPackageName() + "/files/disc/ on the TV "
@@ -501,6 +513,155 @@ public class LauncherActivity extends Activity {
                 }
             });
         }).start();
+    }
+
+    // ------------------------------------------------------------ Google Drive
+
+    /**
+     * Asks for a Google Drive share link ("Anyone with the link") to the disc
+     * image: a .chd, a single .bin, or a .zip holding the .cue and .bin.
+     */
+    private void askDriveLink() {
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        input.setHint("https://drive.google.com/file/d/…");
+        input.setText(get("drive_link", ""));
+        new AlertDialog.Builder(this)
+                .setTitle("Import from Google Drive")
+                .setMessage("In Google Drive, share your disc image as \"Anyone with the link\" and paste or type the link. "
+                        + "Use a .chd, a single .bin, or a .zip holding the .cue and .bin.")
+                .setView(input)
+                .setPositiveButton("Download", (d, w) -> {
+                    String link = input.getText().toString().trim();
+                    String id = driveFileId(link);
+                    if (id == null) {
+                        alert("That does not look like a Google Drive file link.");
+                        return;
+                    }
+                    settings.put("drive_link", link);
+                    saveSettings();
+                    downloadFromDrive(id);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** The file id in a Drive link (…/file/d/ID/…, …?id=ID…, or a bare id). */
+    static String driveFileId(String link) {
+        if (link == null) return null;
+        Matcher m = Pattern.compile("/d/([A-Za-z0-9_-]{10,})").matcher(link);
+        if (m.find()) return m.group(1);
+        m = Pattern.compile("[?&]id=([A-Za-z0-9_-]{10,})").matcher(link);
+        if (m.find()) return m.group(1);
+        return link.matches("[A-Za-z0-9_-]{20,}") ? link : null;
+    }
+
+    private void downloadFromDrive(final String id) {
+        final AlertDialog progress = new AlertDialog.Builder(this)
+                .setTitle("Downloading from Google Drive")
+                .setMessage("Connecting…")
+                .setCancelable(false)
+                .show();
+        new Thread(() -> {
+            String error = null;
+            File result = null;
+            File dir = discDir();
+            File part = new File(home, "drive-download.part");
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(
+                        "https://drive.usercontent.google.com/download?id=" + id + "&export=download&confirm=t").openConnection();
+                c.setInstanceFollowRedirects(true);
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(60000);
+                int code = c.getResponseCode();
+                String type = c.getContentType() == null ? "" : c.getContentType();
+                if (code != 200 || type.startsWith("text/html")) {
+                    throw new IOException("Google Drive did not send the file (HTTP " + code + "). "
+                            + "Check that the link is shared as \"Anyone with the link\".");
+                }
+                String name = fileNameFrom(c.getHeaderField("Content-Disposition"));
+                final long total = c.getContentLengthLong();
+                final long[] done = {0};
+                try (InputStream in = c.getInputStream(); OutputStream os = new FileOutputStream(part)) {
+                    copy(in, os, n -> {
+                        done[0] += n;
+                        final String msg = total > 0
+                                ? (done[0] * 100 / total) + "%  (" + (done[0] >> 20) + " / " + (total >> 20) + " MB)"
+                                : (done[0] >> 20) + " MB";
+                        runOnUiThread(() -> progress.setMessage(msg));
+                    });
+                }
+                File[] old = dir.listFiles();
+                if (old != null) for (File f : old) f.delete();
+                String t = ext(name);
+                if (t.equals("zip")) {
+                    runOnUiThread(() -> progress.setMessage("Unpacking…"));
+                    result = unzipDisc(part, dir);
+                    part.delete();
+                } else if (t.equals("chd") || t.equals("bin") || t.equals("img")) {
+                    File out = new File(dir, name);
+                    if (!part.renameTo(out)) throw new IOException("could not save " + name);
+                    result = out;
+                } else {
+                    part.delete();
+                    throw new IOException("\"" + name + "\" is not a .chd, .bin or .zip disc image.");
+                }
+                if (result == null) throw new IOException("the .zip holds no .cue, .bin or .chd file.");
+            } catch (IOException ex) {
+                part.delete();
+                error = ex.getMessage();
+            }
+            final String err = error;
+            final File disc = result;
+            runOnUiThread(() -> {
+                progress.dismiss();
+                if (err != null) {
+                    alert("Download failed: " + err + "\n\nIs the TV online, and is there enough free space?");
+                } else {
+                    useDisc(disc);
+                    refresh();
+                    playButton.requestFocus();
+                }
+            });
+        }).start();
+    }
+
+    private static String fileNameFrom(String disposition) {
+        if (disposition != null) {
+            Matcher m = Pattern.compile("filename\\*=UTF-8''([^;]+)").matcher(disposition);
+            if (m.find()) {
+                try {
+                    return new File(java.net.URLDecoder.decode(m.group(1), "UTF-8")).getName();
+                } catch (Exception ignored) {
+                }
+            }
+            m = Pattern.compile("filename=\"?([^\";]+)\"?").matcher(disposition);
+            if (m.find()) return new File(m.group(1).trim()).getName();
+        }
+        return "disc.bin";
+    }
+
+    /** Unpacks the disc files of a .zip into dir; returns the .cue/.chd/.bin to play. */
+    private static File unzipDisc(File zip, File dir) throws IOException {
+        File cue = null, chd = null, bin = null;
+        try (ZipInputStream in = new ZipInputStream(new FileInputStream(zip))) {
+            ZipEntry e;
+            while ((e = in.getNextEntry()) != null) {
+                if (e.isDirectory()) continue;
+                String name = new File(e.getName()).getName();
+                String t = ext(name);
+                if (!t.equals("cue") && !t.equals("bin") && !t.equals("img") && !t.equals("chd")) continue;
+                File out = new File(dir, name);
+                try (OutputStream os = new FileOutputStream(out)) {
+                    copy(in, os, null);
+                }
+                if (t.equals("cue")) cue = out;
+                else if (t.equals("chd")) chd = out;
+                else if (bin == null) bin = out;
+            }
+        }
+        return cue != null ? cue : chd != null ? chd : bin;
     }
 
     private long size(Uri u) {
