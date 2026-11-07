@@ -267,6 +267,10 @@ public class LauncherActivity extends Activity {
         help.setOnClickListener(v -> showHelp());
         col.addView(help);
 
+        Button log = makeButton("Show last game log", 0xFF2A3F66, Color.WHITE, false);
+        log.setOnClickListener(v -> showLastLog());
+        col.addView(log);
+
         setContentView(root);
     }
 
@@ -297,6 +301,29 @@ public class LauncherActivity extends Activity {
     private static String nameOf(Option o, String value) {
         for (int i = 0; i < o.values.length; i++) if (o.values[i].equals(value)) return o.names[i];
         return value;
+    }
+
+    /** The end of the last game run's output (and crash report), to read off the TV. */
+    private void showLastLog() {
+        StringBuilder sb = new StringBuilder();
+        for (String name : new String[] {"psx_crash.txt", "last_run.log"}) {
+            List<String> lines = readLines(new File(home, name));
+            if (lines.isEmpty()) continue;
+            sb.append("── ").append(name).append(" ──\n");
+            for (String l : lines.subList(Math.max(0, lines.size() - 40), lines.size())) sb.append(l).append('\n');
+            sb.append('\n');
+        }
+        TextView t = makeText(sb.length() == 0 ? "No game log yet: press PLAY first." : sb.toString(), 11, Color.WHITE, false);
+        t.setTypeface(Typeface.MONOSPACE);
+        t.setPadding(dp(16), dp(8), dp(16), dp(8));
+        t.setFocusable(true);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(t);
+        new AlertDialog.Builder(this)
+                .setTitle("Last game log (take a photo of this if the game crashed)")
+                .setView(sv)
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void showHelp() {

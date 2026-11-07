@@ -861,7 +861,11 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
                     // Start up the C app thread and enable sensor input for the first time
                     // FIXME: Why aren't we enabling sensor input at start?
 
-                    mSDLThread = new Thread(new SDLMain(), "SDLThread");
+                    // Simpsons Wrestling (local change to SDL's file): the game's
+                    // main() needs more than the ~1 MB stack Android gives a
+                    // Java thread by default (it crashed at start-up with 1 MB;
+                    // desktop programs get 8 MB). 16 MB leaves ample room.
+                    mSDLThread = new Thread(null, new SDLMain(), "SDLThread", 16L * 1024 * 1024);
                     mSurface.enableSensor(Sensor.TYPE_ACCELEROMETER, true);
                     mSDLThread.start();
 

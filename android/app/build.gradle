@@ -56,7 +56,7 @@ android {
         // Android 7.0+: covers practically every Android TV box and TV.
         minSdk 24
         targetSdk 35
-        versionCode 10000
+        versionCode 10001
         versionName gameVersion
 
         ndk {

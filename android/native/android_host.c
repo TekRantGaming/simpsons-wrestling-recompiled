@@ -13,9 +13,11 @@
  * that folder instead, then calls the game's own main() (SDL_main).
  *
  * It also forwards stdout/stderr to logcat (tag "SimpsonsWrestling"), where
- * Android otherwise throws them away. */
+ * Android otherwise throws them away, and to last_run.log in the game folder,
+ * which the launcher can show on the TV. */
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +25,7 @@
 #include <unistd.h>
 
 static int s_pipe[2];
+static int s_logfile = -1;   /* last_run.log in the game folder */
 
 static void* log_pump(void* arg) {
     (void)arg;
@@ -31,6 +34,7 @@ static void* log_pump(void* arg) {
     for (;;) {
         ssize_t n = read(s_pipe[0], buf + len, sizeof buf - 1 - len);
         if (n <= 0) break;
+        if (s_logfile >= 0) (void)!write(s_logfile, buf + len, (size_t)n);
         len += (size_t)n;
         buf[len] = '\0';
         char* start = buf;
@@ -55,6 +59,9 @@ __attribute__((constructor)) static void swr_android_start(void) {
     const char* home = getenv("SWR_HOME");
     if (home && *home && chdir(home) != 0)
         __android_log_print(ANDROID_LOG_ERROR, "SimpsonsWrestling", "chdir(%s) failed", home);
+
+    /* The launcher's "Show last game log" reads this. */
+    s_logfile = open("last_run.log", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
