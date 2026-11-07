@@ -415,8 +415,10 @@ public class LauncherActivity extends Activity {
         }
         final File marker = new File(home, ".bundled-disc");
         final File dir = new File(home, "bundled-disc");
-        if (stamp.equals(readText(marker).trim()) && new File(dir, mainName).canRead()) {
-            if (discPath() == null) { useDisc(new File(dir, mainName)); refresh(); }
+        if (stamp.equals(readText(marker).trim())) {
+            // Already unpacked for this version (a .chd may since have been
+            // converted to .bin/.cue and removed: discPath() points there).
+            if (discPath() == null && new File(dir, mainName).canRead()) { useDisc(new File(dir, mainName)); refresh(); }
             return;
         }
         final String stampFinal = stamp;
@@ -886,6 +888,86 @@ public class LauncherActivity extends Activity {
             chooseDisc();
             return;
         }
+        if (ext(disc).equals("chd")) {
+            convertChd(new File(disc), this::play);
+            return;
+        }
+        launchGame(disc);
+    }
+
+    // ------------------------------------------------------------ .chd -> .bin
+
+    // android/native/android_chd.c (in libmain.so, which also holds the game).
+    private static native String nativeChdToBin(String chd, String bin, String binName);
+    private static native int nativeChdProgress();
+    private static boolean nativeLoaded;
+
+    /**
+     * Unpacks a .chd once into a plain .bin + .cue next to the game. Playing
+     * from a .chd makes the game decompress the disc while it runs, which a
+     * TV stick cannot afford. The app's own copy of the .chd is deleted
+     * afterwards to free the space; a .chd elsewhere (USB stick) is kept.
+     */
+    private void convertChd(final File chd, final Runnable then) {
+        if (!nativeLoaded) {
+            try {
+                System.loadLibrary("main");
+                nativeLoaded = true;
+            } catch (Throwable t) {
+                alert("Could not load the game library: " + t.getMessage());
+                return;
+            }
+        }
+        final String base = chd.getName().substring(0, chd.getName().length() - 4);
+        final boolean ours = chd.getAbsolutePath().startsWith(home.getAbsolutePath());
+        final File dir = ours ? chd.getParentFile() : discDir();
+        final File bin = new File(dir, base + ".bin");
+        final File cue = new File(dir, base + ".cue");
+        // A PlayStation disc is at most ~800 MB raw; keep a margin.
+        long need = Math.max(chd.length() * 6, 300L << 20) + (50L << 20);
+        if (dir.getUsableSpace() < need) {
+            alert("Not enough free space on the TV to unpack the disc (about " + (need >> 20) + " MB needed, "
+                    + (dir.getUsableSpace() >> 20) + " MB free). The game will play from the .chd instead, "
+                    + "which is slower.");
+            launchGame(chd.getAbsolutePath());
+            return;
+        }
+        final AlertDialog progress = new AlertDialog.Builder(this)
+                .setTitle("Preparing the disc (one time only)")
+                .setMessage("Unpacking the .chd so the game loads faster…")
+                .setCancelable(false)
+                .show();
+        final boolean[] running = {true};
+        final android.os.Handler ui = new android.os.Handler(getMainLooper());
+        ui.post(new Runnable() {
+            @Override public void run() {
+                if (!running[0]) return;
+                progress.setMessage("Unpacking the .chd so the game loads faster… " + nativeChdProgress() / 10 + "%");
+                ui.postDelayed(this, 400);
+            }
+        });
+        new Thread(() -> {
+            final String result = nativeChdToBin(chd.getAbsolutePath(), bin.getAbsolutePath(), bin.getName());
+            runOnUiThread(() -> {
+                running[0] = false;
+                progress.dismiss();
+                if (result == null || result.startsWith("error")) {
+                    bin.delete();
+                    alert("Could not unpack the .chd (" + result + "). The game will play from the .chd instead.");
+                    launchGame(chd.getAbsolutePath());
+                    return;
+                }
+                writeText(cue, result);
+                if (ours) chd.delete();
+                settings.put("disc", cue.getAbsolutePath());
+                saveSettings();
+                refresh();
+                then.run();
+            });
+        }).start();
+    }
+
+    private void launchGame(String disc) {
         writeRuntimeSettings();
         writeKeybindsOnce();
         Intent i = new Intent(this, GameActivity.class);

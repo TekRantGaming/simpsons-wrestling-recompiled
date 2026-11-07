@@ -19,7 +19,9 @@
 #include <android/log.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -55,9 +57,40 @@ static void* log_pump(void* arg) {
     return NULL;
 }
 
+/* Every 5 s: frames run and CPU use, so a black screen in last_run.log shows
+ * whether the game is running (slowly or not) or stuck. */
+extern uint64_t s_frame_count;   /* psxrecomp debug_server.c, counts in every build */
+
+static double now_s(clockid_t id) {
+    struct timespec ts;
+    clock_gettime(id, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
+static void* heartbeat(void* arg) {
+    (void)arg;
+    uint64_t last_frames = s_frame_count;
+    double last_wall = now_s(CLOCK_MONOTONIC), last_cpu = now_s(CLOCK_PROCESS_CPUTIME_ID);
+    for (;;) {
+        sleep(5);
+        uint64_t frames = s_frame_count;
+        double wall = now_s(CLOCK_MONOTONIC), cpu = now_s(CLOCK_PROCESS_CPUTIME_ID);
+        double dt = wall - last_wall;
+        printf("[heartbeat] frame %llu, %.1f frames/s (60 = full speed), CPU %.0f%% of one core\n",
+               (unsigned long long)frames, dt > 0 ? (double)(frames - last_frames) / dt : 0.0,
+               dt > 0 ? 100.0 * (cpu - last_cpu) / dt : 0.0);
+        last_frames = frames; last_wall = wall; last_cpu = cpu;
+    }
+    return NULL;
+}
+
 __attribute__((constructor)) static void swr_android_start(void) {
+    /* Only the game process (GameActivity) sets SWR_HOME. The launcher also
+     * loads libmain.so, for the .chd converter (android_chd.c), and must not
+     * get any of this. */
     const char* home = getenv("SWR_HOME");
-    if (home && *home && chdir(home) != 0)
+    if (!home || !*home) return;
+    if (chdir(home) != 0)
         __android_log_print(ANDROID_LOG_ERROR, "SimpsonsWrestling", "chdir(%s) failed", home);
 
     /* The launcher's "Show last game log" reads this. */
@@ -71,6 +104,8 @@ __attribute__((constructor)) static void swr_android_start(void) {
         pthread_t t;
         if (pthread_create(&t, NULL, log_pump, NULL) == 0) pthread_detach(t);
     }
+    pthread_t hb;
+    if (pthread_create(&hb, NULL, heartbeat, NULL) == 0) pthread_detach(hb);
 }
 
 int SDL_main(int argc, char* argv[]);

@@ -47,7 +47,8 @@ add_subdirectory("${SWR_ROOT}" game)
 target_sources(psx-runtime PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/android_host.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/android_fiber.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/android_gl_compat.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/android_gl_compat.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/android_chd.c")
 target_include_directories(psx-runtime PRIVATE "${PSXRECOMP_ROOT}/runtime/include")
 # psx_fiber.c's POSIX backend is ucontext, which Android lacks: android_fiber.c
 # implements the same psx_fiber.h API instead.
