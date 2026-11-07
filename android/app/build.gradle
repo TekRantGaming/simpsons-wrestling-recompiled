@@ -1,0 +1,145 @@
+// The Simpsons Wrestling Recompiled for Android TV.
+//
+// Builds libmain.so (the recompiled game, android/native/CMakeLists.txt) for
+// the ABIs below with the NDK, and packages it with SDL's Java glue, the TV
+// launcher screen and the runtime's data files.
+//
+// The game's code is generated from YOUR disc first (see android/README.md):
+// the build stops if generated/ is missing, instead of producing an APK that
+// cannot play anything. -PallowSetupHost=true skips that check (engine-only
+// test builds).
+plugins {
+    id 'com.android.application'
+}
+
+def repoRoot = file('../..')
+def runtimeAssets = layout.buildDirectory.dir('runtime-assets').get().asFile
+def abiList = (project.findProperty('abis') ?: 'armeabi-v7a').split(',')*.trim()
+def requireGameC = !(project.findProperty('allowSetupHost') ?: 'false').toBoolean()
+def gameVersion = file("${repoRoot}/VERSION").text.trim()
+
+// -PbundleDisc=<your .chd, or .cue/.bin> puts your own disc image inside the
+// APK (a private, one-file install: never publish such an APK). The launcher
+// unpacks it on first start and selects it.
+def bundleDisc = project.findProperty('bundleDisc')
+def bundledDiscAssets = layout.buildDirectory.dir('bundled-disc-assets').get().asFile
+if (bundleDisc) {
+    def src = file(bundleDisc)
+    if (!src.exists()) throw new GradleException("bundleDisc: ${src} does not exist")
+    def out = new File(bundledDiscAssets, 'bundled-disc')
+    out.deleteDir()
+    out.mkdirs()
+    def copyOne = { File f -> java.nio.file.Files.copy(f.toPath(), new File(out, f.name).toPath()) }
+    copyOne(src)
+    if (src.name.toLowerCase().endsWith('.cue')) {
+        (src.text =~ /(?im)^\s*FILE\s+"([^"]+)"/).each { m -> copyOne(new File(src.parentFile, m[1])) }
+    }
+} else {
+    bundledDiscAssets.deleteDir()
+}
+
+if (requireGameC && !file("${repoRoot}/generated/SLUS_012.27_dispatch.c").exists()) {
+    throw new GradleException(
+        "generated/ is missing: translate the game from your own disc first:\n" +
+        "  python psxrecomp/psxrecomp_cli.py generate --config game.toml --project-root . " +
+        "--disc \"path/to/Simpsons Wrestling, The (USA).cue\"\n" +
+        "(or pass -PallowSetupHost=true for an engine-only test build)")
+}
+
+android {
+    namespace 'io.github.ganley100.simpsonswrestling'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'io.github.ganley100.simpsonswrestling'
+        // Android 7.0+: covers practically every Android TV box and TV.
+        minSdk 24
+        targetSdk 35
+        versionCode 10002
+        versionName gameVersion
+
+        ndk {
+            abiFilters(*abiList)
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static',
+                          '-DANDROID_ARM_MODE=arm',
+                          "-DSWR_ASSETS_OUT=${runtimeAssets}",
+                          "-DSWR_ASSETS_ABI=${abiList[0]}",
+                          "-DPSXRECOMP_REQUIRE_GAME_C=${requireGameC ? 'ON' : 'OFF'}",
+                          // Generated BIOS C is pinned by the psxrecomp submodule.
+                          '-DPSXRECOMP_SKIP_BIOS_STALE_CHECK=ON'
+                targets 'psx-runtime', 'swr-runtime-assets'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('../native/CMakeLists.txt')
+            version '3.31.6'
+        }
+    }
+
+    buildTypes {
+        release {
+            // Signed with the debug key unless you configure your own, so the
+            // release APK installs straight away (sideloading).
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            externalNativeBuild {
+                cmake {
+                    arguments '-DCMAKE_BUILD_TYPE=Release'
+                }
+            }
+        }
+        debug {
+            externalNativeBuild {
+                cmake {
+                    // The game is unplayably slow unoptimised, even for debugging.
+                    arguments '-DCMAKE_BUILD_TYPE=RelWithDebInfo'
+                }
+            }
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += runtimeAssets
+            assets.srcDirs += bundledDiscAssets
+        }
+    }
+
+    androidResources {
+        // Disc images are stored as-is: they are already compressed (.chd)
+        // or large, and the launcher streams them out on first start.
+        noCompress 'chd', 'bin', 'cue', 'img'
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+// The runtime's data files come out of the native build: package them after it.
+tasks.configureEach { task ->
+    def m = task.name =~ /^merge(\w+)Assets$/
+    if (m.matches()) {
+        task.dependsOn("externalNativeBuild${m.group(1)}")
+    }
+}
